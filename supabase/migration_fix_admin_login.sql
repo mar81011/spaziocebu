@@ -1,31 +1,7 @@
--- Run in Supabase SQL Editor if you already have tables:
--- https://supabase.com/dashboard/project/rsaoiobpvszinripuocc/sql/new
+-- Fix admin login on Supabase (pgcrypto lives in the extensions schema).
+-- Run in SQL Editor: https://supabase.com/dashboard/project/rsaoiobpvszinripuocc/sql/new
 
 create extension if not exists pgcrypto with schema extensions;
-
--- Menu item availability (hide from customer site when off)
-alter table public.menu_items
-  add column if not exists is_available boolean not null default true;
-
--- Admin login (username + password hash — never store plain passwords)
-create table if not exists public.admin_users (
-  id bigint generated always as identity primary key,
-  username text not null unique,
-  password_hash text not null,
-  created_at timestamptz not null default now()
-);
-
-alter table public.admin_users enable row level security;
--- No policies: anon cannot read admin_users directly.
-
-create or replace function public.has_admin_users()
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  select exists (select 1 from public.admin_users);
-$$;
 
 create or replace function public.verify_admin_login(p_username text, p_password text)
 returns boolean
@@ -82,11 +58,13 @@ begin
 end;
 $$;
 
-grant execute on function public.has_admin_users() to anon, authenticated;
 grant execute on function public.verify_admin_login(text, text) to anon, authenticated;
 grant execute on function public.update_admin_password(text, text, text) to anon, authenticated;
 
--- Default admin: username `admin` / password `SpazioAdmin2026` — change after first login in Settings
-insert into public.admin_users (username, password_hash)
-values ('admin', crypt('SpazioAdmin2026', gen_salt('bf')))
-on conflict (username) do nothing;
+-- Reset admin password (change the string if you want a different password)
+update public.admin_users
+set password_hash = crypt('SpazioAdmin2026', gen_salt('bf'))
+where username = 'admin';
+
+-- Should return true when the fix worked:
+select public.verify_admin_login('admin', 'SpazioAdmin2026') as login_works;

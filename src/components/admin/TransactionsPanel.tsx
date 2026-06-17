@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { formatCurrency, formatTime } from "../../lib/format";
+import { formatCurrency, formatOrderLineItem, formatTime } from "../../lib/format";
 import { getCompletedTransactions, sumTransactionTotal, type TransactionPeriod } from "../../lib/transactions";
 import { useOrders } from "../../hooks/useOrders";
 
@@ -79,7 +79,7 @@ export function TransactionsPanel() {
                   <td className="px-5 py-4 font-semibold">#{order.id}</td>
                   <td className="px-5 py-4">{order.customerName}</td>
                   <td className="max-w-[220px] truncate px-5 py-4 text-warm-gray">
-                    {order.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}
+                    {order.items.map((i) => formatOrderLineItem(i)).join(", ")}
                   </td>
                   <td className="px-5 py-4 text-warm-gray">{formatTime(order.createdAt)}</td>
                   <td className="px-5 py-4 text-right font-medium">{formatCurrency(order.total)}</td>

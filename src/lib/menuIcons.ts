@@ -45,72 +45,10 @@ export function iconForCategory(title: string): string {
   return "☕";
 }
 
-function shortLabel(name: string, max = 14): string {
-  if (name.length <= max) return name;
-  const parts = name.split(/\s+/);
-  if (parts.length > 1 && parts[parts.length - 1]!.length <= max) {
-    return parts[parts.length - 1]!;
-  }
-  return `${name.slice(0, max - 1)}…`;
-}
-
-function isAddonCategory(category: string) {
-  return /add|pastry|food|bakery|extra/i.test(category);
-}
-
-function isOrderableAddon(item: { name: string; price: number; category: string }) {
-  if (!isAddonCategory(item.category)) return false;
-  if (/shot|swap|syrup|milk|extra/i.test(item.name) && item.price < 80) return false;
-  return true;
-}
-
 export function buildQuickReplies(menu: Menu): QuickReply[] {
-  const items = getAllMenuItems(menu);
-  if (!items.length) {
+  if (!getAllMenuItems(menu).length) {
     return [{ label: "View menu", message: "What's on the menu?", icon: "📋" }];
   }
 
-  const coffees = items.filter((i) => !isAddonCategory(i.category));
-  const addons = items.filter(isOrderableAddon);
-
-  const featuredCoffee =
-    coffees.find((i) => /flat white/i.test(i.name)) ??
-    coffees.find((i) => /signature/i.test(i.name)) ??
-    coffees[0];
-
-  const featuredAddon =
-    addons.find((i) => /croissant/i.test(i.name)) ??
-    addons.find((i) => i.price >= 100) ??
-    addons[0];
-
-  const replies: QuickReply[] = [];
-
-  if (featuredCoffee) {
-    replies.push({
-      label: shortLabel(featuredCoffee.name),
-      message: `I'd like a ${featuredCoffee.name} please`,
-      icon: iconForMenuItem(featuredCoffee.name, featuredCoffee.category),
-    });
-  }
-
-  if (featuredCoffee && featuredAddon) {
-    const coffeeShort = shortLabel(featuredCoffee.name, 10);
-    const addonShort = shortLabel(featuredAddon.name, 10);
-    replies.push({
-      label: `${coffeeShort} + ${addonShort}`,
-      message: `${featuredCoffee.name} and ${featuredAddon.name} please`,
-      icon: iconForMenuItem(featuredCoffee.name, featuredCoffee.category),
-      secondaryIcon: iconForMenuItem(featuredAddon.name, featuredAddon.category),
-    });
-  } else if (featuredAddon) {
-    replies.push({
-      label: shortLabel(featuredAddon.name),
-      message: `I'd like ${featuredAddon.name} please`,
-      icon: iconForMenuItem(featuredAddon.name, featuredAddon.category),
-    });
-  }
-
-  replies.push({ label: "View menu", message: "What's on the menu?", icon: "📋" });
-
-  return replies.slice(0, 4);
+  return [{ label: "View menu", message: "What's on the menu?", icon: "📋" }];
 }

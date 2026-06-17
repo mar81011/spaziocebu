@@ -1,5 +1,5 @@
 import type { Order, OrderStatus } from "../../types";
-import { formatCurrency, formatTime } from "../../lib/format";
+import { formatCurrency, formatOrderLineItem, formatTime } from "../../lib/format";
 import { orderStatusBadgeClass, orderStatusDescription, orderStatusLabel } from "../../lib/orderStatus";
 
 interface OrderDrawerProps {
@@ -52,10 +52,8 @@ export function OrderDrawer({ order, onClose, onStatusChange, onDelete }: OrderD
           <h3 className="text-xs font-medium uppercase tracking-wider text-warm-gray">Items</h3>
           <ul className="mt-3 divide-y divide-espresso/6">
             {order.items.map((item) => (
-              <li key={item.name} className="flex justify-between py-2 text-sm">
-                <span>
-                  {item.qty}× {item.name}
-                </span>
+              <li key={`${item.name}-${item.forDrink ?? ""}`} className="flex justify-between py-2 text-sm">
+                <span>{formatOrderLineItem(item)}</span>
                 <span>{formatCurrency(item.price * item.qty)}</span>
               </li>
             ))}

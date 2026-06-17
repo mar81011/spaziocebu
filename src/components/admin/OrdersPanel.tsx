@@ -8,7 +8,7 @@ import {
   resetOrders,
   updateOrder,
 } from "../../lib/storage";
-import { formatCurrency, formatTime } from "../../lib/format";
+import { formatCurrency, formatOrderLineItem, formatTime } from "../../lib/format";
 import { orderStatusLabel } from "../../lib/orderStatus";
 import { useMenu } from "../../hooks/useMenu";
 import { useOrders } from "../../hooks/useOrders";
@@ -157,7 +157,7 @@ export function OrdersPanel() {
                   <td className="px-5 py-4 font-semibold">#{order.id}</td>
                   <td className="px-5 py-4">{order.customerName}</td>
                   <td className="max-w-[200px] truncate px-5 py-4 text-warm-gray">
-                    {order.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}
+                    {order.items.map((i) => formatOrderLineItem(i)).join(", ")}
                   </td>
                   <td className="px-5 py-4">{formatCurrency(order.total)}</td>
                   <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>

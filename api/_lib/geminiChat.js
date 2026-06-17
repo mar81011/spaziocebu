@@ -18,6 +18,7 @@ const RESPONSE_SCHEMA = {
         properties: {
           itemId: { type: "STRING" },
           qty: { type: "INTEGER" },
+          forDrink: { type: "STRING" },
         },
         required: ["itemId", "qty"],
       },
@@ -65,14 +66,16 @@ STRICT RULES:
 1. ONLY discuss items listed in MENU_DATA. Never invent items, prices, sizes, or promotions.
 2. If asked about something not in MENU_DATA, say you can only help with our current menu and placing orders.
 3. Orders are pickup only. Do not offer delivery.
-4. When updating the order, set updateCart to true and return the FULL cart using exact itemId values from MENU_DATA.
+4. When updating the order, set updateCart to true and return the FULL cart using exact itemId values from MENU_DATA — include items already in the cart when the customer adds more.
 5. When not changing the cart, set updateCart to false.
 6. When listing menu items or an order summary, use line breaks: one item per line starting with •, category headers on their own line, and Total: on a separate line after items.
-7. After summarising items, ask the customer to reply "confirm" to continue.
-8. Keep replies short, warm, and helpful.
-9. Understand casual names (e.g. "cap" → Cappuccino, "croissant" → Almond Croissant) only when they clearly match a MENU_DATA item.
-10. Do not discuss unrelated topics — gently redirect to ordering.
-11. Prices in MENU_DATA are in Philippine Pesos (₱). Never guess prices.
+7. When the customer asks to see the menu, list the FULL MENU_DATA by category — not just items already in their cart. Set updateCart to false unless they add or change items.
+8. After summarising items for checkout, ask the customer to reply "confirm" to continue.
+9. Keep replies short, warm, and helpful.
+10. Understand casual names (e.g. "cap" → Cappuccino, "croissant" → Almond Croissant) only when they clearly match a MENU_DATA item.
+11. Add-ons (Extra shot, Oat milk swap, Vanilla syrup, etc.) must say which drink they apply to. In cart entries, set forDrink to the exact drink name from MENU_DATA. When the same drink appears multiple times with different modifiers (e.g. "2 Spazio, extra shot on one and oat on the other"), split into separate cart lines — one drink per modifier bundle, never merge different modifier combos into one qty line.
+12. Do not discuss unrelated topics — gently redirect to ordering.
+13. Prices in MENU_DATA are in Philippine Pesos (₱). Never guess prices.
 
 MENU_DATA:
 ${menuJson}
@@ -83,7 +86,9 @@ ${storeLines.join("\n")}`;
 
 function cartSummary(items) {
   if (!items.length) return "empty";
-  return items.map((i) => `${i.qty}× ${i.name}`).join(", ");
+  return items
+    .map((i) => (i.forDrink ? `${i.qty}× ${i.name} for ${i.forDrink}` : `${i.qty}× ${i.name}`))
+    .join(", ");
 }
 
 function buildUserTurn(message, session) {
@@ -157,6 +162,10 @@ async function fetchStoreFromSupabase(url, key) {
   };
 }
 
+function cartLineKey(item) {
+  return `${item.name}::${item.forDrink ?? ""}`;
+}
+
 function cartFromIds(cart, menu) {
   const byId = new Map();
   for (const cat of menu.categories) {
@@ -170,9 +179,12 @@ function cartFromIds(cart, menu) {
     const item = byId.get(entry.itemId);
     if (!item) continue;
     const qty = Math.max(1, Math.min(99, Number(entry.qty) || 1));
-    const existing = items.find((i) => i.name === item.name);
+    const forDrink =
+      typeof entry.forDrink === "string" && entry.forDrink.trim() ? entry.forDrink.trim() : undefined;
+    const line = { name: item.name, qty, price: item.price, forDrink };
+    const existing = items.find((i) => cartLineKey(i) === cartLineKey(line));
     if (existing) existing.qty += qty;
-    else items.push({ name: item.name, qty, price: item.price });
+    else items.push(line);
   }
   return items;
 }

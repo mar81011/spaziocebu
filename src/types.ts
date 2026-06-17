@@ -24,6 +24,10 @@ export interface OrderLineItem {
   name: string;
   qty: number;
   price: number;
+  /** When set, this add-on applies to a specific drink in the order */
+  forDrink?: string;
+  /** Groups a drink with its add-ons as one line in the order summary */
+  bundleId?: string;
 }
 
 export interface Order {

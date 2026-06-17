@@ -33,27 +33,30 @@ export async function usesDatabaseAdminAuth(): Promise<boolean> {
   return db.hasAdminUsers();
 }
 
-export async function loginAdmin(username: string, password: string): Promise<boolean> {
+export async function loginAdmin(
+  username: string,
+  password: string
+): Promise<{ ok: boolean; error?: string }> {
   if (isSupabaseConfigured && (await db.hasAdminUsers())) {
     try {
       const ok = await db.verifyAdminLogin(username, password);
-      if (!ok) return false;
+      if (!ok) return { ok: false };
       sessionStorage.setItem(AUTH_KEY, "1");
       sessionStorage.setItem(ADMIN_USER_KEY, username.trim().toLowerCase());
-      return true;
+      return { ok: true };
     } catch (error) {
       console.error("Admin login failed:", error);
-      return false;
+      return { ok: false, error: db.formatDbError(error) };
     }
   }
 
   if (password === getAdminPassword() && getAdminPassword().length > 0) {
     sessionStorage.setItem(AUTH_KEY, "1");
     sessionStorage.setItem(ADMIN_USER_KEY, username.trim() || "admin");
-    return true;
+    return { ok: true };
   }
 
-  return false;
+  return { ok: false };
 }
 
 export async function changeAdminPassword(

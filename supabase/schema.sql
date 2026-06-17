@@ -121,7 +121,7 @@ on conflict (id) do nothing;
 -- Admin auth (RPC — passwords never exposed to client)
 -- ---------------------------------------------------------------------------
 
-create extension if not exists pgcrypto;
+create extension if not exists pgcrypto with schema extensions;
 
 create or replace function public.has_admin_users()
 returns boolean
@@ -136,7 +136,7 @@ create or replace function public.verify_admin_login(p_username text, p_password
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   stored_hash text;
@@ -161,7 +161,7 @@ create or replace function public.update_admin_password(
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   stored_hash text;

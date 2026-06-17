@@ -12,15 +12,288 @@ function sessionTotal(items: OrderLineItem[]) {
   return items.reduce((s, i) => s + i.price * i.qty, 0);
 }
 
+function lineKey(item: OrderLineItem) {
+  if (item.bundleId) return `${item.bundleId}::${item.name}::${item.forDrink ?? ""}`;
+  return `${item.name}::${item.forDrink ?? ""}`;
+}
+
+function parseQtyForItem(text: string, itemName: string): number {
+  const lower = text.toLowerCase();
+  const nameLower = itemName.toLowerCase();
+  const escaped = escapeRegex(nameLower).replace(/\s+/g, "\\s+");
+  const patterns = [
+    new RegExp(`(\\d+)\\s*(?:x\\s*)?${escaped}s?\\b`, "i"),
+    new RegExp(`(\\d+)\\s+${escaped}`, "i"),
+  ];
+
+  const firstWord = nameLower.split(/\s+/)[0];
+  if (firstWord && isMenuWord(firstWord)) {
+    patterns.push(new RegExp(`(\\d+)\\s*(?:x\\s*)?${escapeRegex(firstWord)}\\b`, "i"));
+    patterns.push(new RegExp(`(\\d+)\\s+${escapeRegex(firstWord)}\\b`, "i"));
+  }
+
+  for (const pattern of patterns) {
+    const match = lower.match(pattern);
+    if (match) return Math.max(1, parseInt(match[1], 10));
+  }
+  return 1;
+}
+
+function parseAddonUnitsForDrink(text: string, addonName: string, drinkName: string): number {
+  const lower = text.toLowerCase();
+  const addonEsc = escapeRegex(addonName.toLowerCase());
+  const drinkEsc = escapeRegex(drinkName.toLowerCase()).replace(/\s+/g, "\\s+");
+
+  const qtyMatch = lower.match(
+    new RegExp(`${addonEsc}\\s+(?:on|for|to)\\s+(\\d+)\\s*(?:x\\s*)?${drinkEsc}s?\\b`, "i")
+  );
+  if (qtyMatch) return Math.max(1, parseInt(qtyMatch[1], 10));
+
+  if (new RegExp(`${addonEsc}\\s+(?:on|for|to)\\s+.*?${drinkEsc}`, "i").test(lower)) return 1;
+
+  return 1;
+}
+
+function makeBundleId(prefix: string) {
+  return `bundle-${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function splitUnbundledCart(items: OrderLineItem[]): OrderLineItem[] {
+  const drinks = items.filter((item) => !item.forDrink);
+  const addons = items.filter((item) => item.forDrink);
+  const usedAddons = new Set<number>();
+  const result: OrderLineItem[] = [];
+
+  for (const drink of drinks) {
+    const linked = addons
+      .map((addon, index) => ({ addon, index }))
+      .filter(({ addon }) => addon.forDrink === drink.name);
+
+    if (!linked.length) {
+      result.push({ ...drink });
+      continue;
+    }
+
+    let remainingDrinks = drink.qty;
+
+    for (const { addon, index } of linked) {
+      const units = Math.min(addon.qty, remainingDrinks);
+      for (let unit = 0; unit < units; unit++) {
+        const bundleId = makeBundleId(drink.name);
+        result.push({ ...drink, qty: 1, bundleId });
+        result.push({ ...addon, qty: 1, bundleId, forDrink: drink.name });
+        usedAddons.add(index);
+        remainingDrinks -= 1;
+      }
+    }
+
+    if (remainingDrinks > 0) {
+      result.push({ ...drink, qty: remainingDrinks });
+    }
+  }
+
+  addons.forEach((addon, index) => {
+    if (!usedAddons.has(index)) result.push({ ...addon });
+  });
+
+  return result;
+}
+
+function finalizeCart(items: OrderLineItem[]): OrderLineItem[] {
+  const bundled = items.filter((item) => item.bundleId);
+  const unbundled = items.filter((item) => !item.bundleId);
+  if (!unbundled.length) return items;
+  return [...bundled, ...splitUnbundledCart(unbundled)];
+}
+
+function isAddonMenuItem(item: { name: string; category: string; price: number }) {
+  if (!/add|extra|modifier/i.test(item.category)) return false;
+  return /shot|swap|syrup|milk|extra/i.test(item.name) && item.price < 80;
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isMenuWord(word: string) {
+  return word.length >= 3;
+}
+
+function inferSoleDrinkInContext(existing: OrderLineItem[], drinksInMessage: OrderLineItem[]): string | null {
+  const counts = new Map<string, number>();
+  for (const item of [...existing, ...drinksInMessage]) {
+    if (item.forDrink) continue;
+    counts.set(item.name, (counts.get(item.name) ?? 0) + item.qty);
+  }
+  if (counts.size === 1) return [...counts.keys()][0] ?? null;
+  return null;
+}
+
+function collectDrinkNames(menu: Menu, existing: OrderLineItem[]) {
+  const fromMenu = getAllMenuItems(menu)
+    .filter((item) => !isAddonMenuItem(item))
+    .map((item) => item.name);
+  const fromCart = existing.filter((item) => !item.forDrink).map((item) => item.name);
+  return [...new Set([...fromMenu, ...fromCart])];
+}
+
+function matchDrinksInText(segment: string, drinkNames: string[]): string[] {
+  const parts = segment
+    .split(/\s+and\s+|,\s*|\s*&\s*/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const targets: string[] = [];
+  const sorted = [...drinkNames].sort((a, b) => b.length - a.length);
+
+  for (const part of parts.length > 1 ? parts : [segment]) {
+    const pl = part.toLowerCase();
+    for (const name of sorted) {
+      const nl = name.toLowerCase();
+      if (pl.includes(nl) || nl.includes(pl)) {
+        targets.push(name);
+        break;
+      }
+      const words = nl.split(/\s+/).filter((w) => isMenuWord(w));
+      if (words.some((w) => new RegExp(`\\b${escapeRegex(w)}\\b`).test(pl))) {
+        targets.push(name);
+        break;
+      }
+    }
+  }
+
+  return [...new Set(targets)];
+}
+
+function findDrinksForAddon(
+  text: string,
+  addonName: string,
+  menu: Menu,
+  existing: OrderLineItem[],
+  drinksInMessage: OrderLineItem[] = []
+): string[] {
+  const drinkNames = collectDrinkNames(menu, existing);
+  const lower = text.toLowerCase();
+  const addonLower = addonName.toLowerCase();
+
+  const onMatch = lower.match(
+    new RegExp(`${escapeRegex(addonLower)}\\s+(?:on|for|to)\\s+(.+?)(?:\\s+and\\s+|$|\\.|!|\\?)`, "i")
+  );
+  if (onMatch) {
+    if (/the other one|the other|one of them/i.test(onMatch[1])) {
+      const sole = inferSoleDrinkInContext(existing, drinksInMessage);
+      if (sole) return [sole];
+    }
+    const found = matchDrinksInText(onMatch[1], drinkNames);
+    if (found.length) return found;
+  }
+
+  if (/for the other one add/i.test(lower)) {
+    const sole = inferSoleDrinkInContext(existing, drinksInMessage);
+    if (sole) return [sole];
+  }
+
+  const toMatch = lower.match(
+    /(?:add|with|extra)\s+.+?\s+to\s+(.+?)(?:$|\.|!|\?)/i
+  );
+  if (toMatch) {
+    if (/the other one|the other|one of them/i.test(toMatch[1])) {
+      const sole = inferSoleDrinkInContext(existing, drinksInMessage);
+      if (sole) return [sole];
+    }
+    const found = matchDrinksInText(toMatch[1], drinkNames);
+    if (found.length) return found;
+  }
+
+  const withMatch = lower.match(
+    new RegExp(`(.+?)\\s+with\\s+${escapeRegex(addonLower)}`, "i")
+  );
+  if (withMatch) {
+    const found = matchDrinksInText(withMatch[1], drinkNames);
+    if (found.length) return found;
+  }
+
+  const drinksInText = matchDrinksInText(lower, drinkNames);
+  const addonsMentioned = getAllMenuItems(menu).filter(
+    (item) => isAddonMenuItem(item) && lower.includes(item.name.toLowerCase())
+  );
+  if (drinksInText.length === 1 && addonsMentioned.length === 1) {
+    return drinksInText;
+  }
+
+  const sole = inferSoleDrinkInContext(existing, drinksInMessage);
+  if (sole) return [sole];
+
+  return [];
+}
+
 function sessionSummary(items: OrderLineItem[]) {
-  return items
-    .map((i) => `• ${i.qty}× ${i.name} — ${formatCurrency(i.price * i.qty)}`)
-    .join("\n");
+  const drinks = items.filter((item) => !item.forDrink);
+  const addons = items.filter((item) => item.forDrink);
+  const lines: string[] = [];
+  const shownBundles = new Set<string>();
+
+  for (const drink of drinks) {
+    if (drink.bundleId) {
+      if (shownBundles.has(drink.bundleId)) continue;
+      shownBundles.add(drink.bundleId);
+      lines.push(`• ${drink.qty}× ${drink.name} — ${formatCurrency(drink.price * drink.qty)}`);
+      for (const addon of addons.filter((item) => item.bundleId === drink.bundleId)) {
+        lines.push(`  + ${addon.qty}× ${addon.name} — ${formatCurrency(addon.price * addon.qty)}`);
+      }
+      continue;
+    }
+
+    const linked = addons.filter((item) => item.forDrink === drink.name && !item.bundleId);
+    lines.push(`• ${drink.qty}× ${drink.name} — ${formatCurrency(drink.price * drink.qty)}`);
+    for (const addon of linked) {
+      lines.push(`  + ${addon.qty}× ${addon.name} — ${formatCurrency(addon.price * addon.qty)}`);
+    }
+  }
+
+  for (const addon of addons.filter((item) => !item.bundleId && !drinks.some((drink) => drink.name === item.forDrink))) {
+    lines.push(`• ${addon.qty}× ${addon.name} — ${formatCurrency(addon.price * addon.qty)}`);
+  }
+
+  return lines.join("\n");
 }
 
 function formatOrderBlock(items: OrderLineItem[], intro: string) {
   if (!items.length) return intro;
   return `${intro}\n\n${sessionSummary(items)}\n\nTotal: ${formatCurrency(sessionTotal(items))}`;
+}
+
+function mergeCartItems(existing: OrderLineItem[], incoming: OrderLineItem[]): OrderLineItem[] {
+  const merged = existing.map((i) => ({ ...i }));
+  for (const item of incoming) {
+    const found = merged.find((i) => lineKey(i) === lineKey(item));
+    if (found) found.qty += item.qty;
+    else merged.push({ ...item });
+  }
+  return finalizeCart(merged);
+}
+
+function resolveAiCart(existing: OrderLineItem[], fromAi: OrderLineItem[]): OrderLineItem[] {
+  if (!fromAi.length) return existing;
+  if (!existing.length) return finalizeCart(fromAi);
+  const aiHasAllExisting = existing.every((e) => fromAi.some((i) => lineKey(i) === lineKey(e)));
+  if (aiHasAllExisting && fromAi.length >= existing.length) return finalizeCart(fromAi);
+  return finalizeCart(mergeCartItems(existing, fromAi));
+}
+
+function isMenuRequest(text: string) {
+  return /\b(menu|what do you (have|sell|offer)|what(?:'s| is) (?:on |available)|show (?:me )?(?:the )?menu|see (?:the )?menu)\b/i.test(
+    text.toLowerCase()
+  );
+}
+
+function formatMenuReply(menu: Menu, items: OrderLineItem[]) {
+  let text = `Here's our menu:\n\n${formatMenuForChat(menu)}`;
+  if (items.length > 0) {
+    text += `\n\nYour order so far:\n${sessionSummary(items)}\nTotal: ${formatCurrency(sessionTotal(items))}\n\nReply confirm to place your order, or tell me what else to add.`;
+  } else {
+    text += `\n\nWhat would you like?`;
+  }
+  return text;
 }
 
 export function formatMenuForChat(menu: Menu) {
@@ -34,25 +307,56 @@ export function formatMenuForChat(menu: Menu) {
     .join("\n\n");
 }
 
-export function parseItemsFromText(text: string, menu: Menu): OrderLineItem[] {
+export function parseItemsFromText(
+  text: string,
+  menu: Menu,
+  existing: OrderLineItem[] = []
+): OrderLineItem[] {
   const lower = text.toLowerCase();
   const allItems = getAllMenuItems(menu).sort((a, b) => b.name.length - a.name.length);
-  const items: OrderLineItem[] = [];
+  const matched: Array<{ menuItem: (typeof allItems)[number]; qty: number }> = [];
 
   for (const menuItem of allItems) {
     const key = menuItem.name.toLowerCase();
-    if (!lower.includes(key)) continue;
+    const words = key.split(/\s+/);
+    const matchedText =
+      lower.includes(key) ||
+      words.some(
+        (word) =>
+          isMenuWord(word) && new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(lower)
+      );
+    if (!matchedText) continue;
 
-    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const qtyMatch = lower.match(new RegExp(`(\\d+)\\s*(?:x\\s*)?${escaped.split(" ")[0]}`, "i"));
-    const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+    const qty = parseQtyForItem(text, menuItem.name);
 
-    if (!items.find((i) => i.name === menuItem.name)) {
-      items.push({ name: menuItem.name, qty, price: menuItem.price });
+    if (!matched.find((entry) => entry.menuItem.name === menuItem.name)) {
+      matched.push({ menuItem, qty });
     }
   }
 
-  return items;
+  const drinks: OrderLineItem[] = [];
+  const addons: OrderLineItem[] = [];
+
+  for (const { menuItem, qty } of matched) {
+    const line = { name: menuItem.name, qty, price: menuItem.price };
+    if (isAddonMenuItem(menuItem)) addons.push(line);
+    else drinks.push(line);
+  }
+
+  const result = [...drinks];
+  for (const addon of addons) {
+    const targets = findDrinksForAddon(text, addon.name, menu, existing, drinks);
+    if (targets.length) {
+      for (const drinkName of targets) {
+        const units = parseAddonUnitsForDrink(text, addon.name, drinkName);
+        result.push({ ...addon, qty: units, forDrink: drinkName });
+      }
+    } else {
+      result.push(addon);
+    }
+  }
+
+  return finalizeCart(result);
 }
 
 type AiChatResponse = {
@@ -109,20 +413,21 @@ function processWithRules(
   const lower = userText.toLowerCase().trim();
   let next = { ...session, items: [...session.items] };
 
-  if (lower.includes("menu")) {
+  if (isMenuRequest(lower)) {
     return {
       session: next,
-      text: `Here's our menu:\n\n${formatMenuForChat(menu)}\n\nWhat would you like?`,
+      text: formatMenuReply(menu, next.items),
     };
   }
 
-  const parsed = parseItemsFromText(userText, menu);
+  const parsed = parseItemsFromText(userText, menu, next.items);
   if (parsed.length > 0) {
-    next.items = parsed;
+    next.items = next.items.length > 0 ? mergeCartItems(next.items, parsed) : parsed;
     next.awaitingConfirm = true;
+    const intro = next.items.length > parsed.length ? "Added to your order!" : "Got it!";
     return {
       session: next,
-      text: `${formatOrderBlock(next.items, "Got it!")}\n\nReply confirm to place your order.`,
+      text: `${formatOrderBlock(next.items, intro)}\n\nReply confirm to place your order, or tell me what else to add.`,
     };
   }
 
@@ -189,14 +494,14 @@ export async function processUserMessage(
 
   const ai = await callAiChat(userText, next, menu, storeOpen, history);
   if (ai) {
-    next.items = ai.items;
-    next.awaitingConfirm = ai.awaitingConfirm;
+    next.items = resolveAiCart(next.items, ai.items);
+    next.awaitingConfirm = ai.awaitingConfirm || next.items.length > 0;
     let text = ai.message;
-    if (next.awaitingConfirm && next.items.length > 0) {
+    if (isMenuRequest(lower)) {
+      text = formatMenuReply(menu, next.items);
+    } else if (next.awaitingConfirm && next.items.length > 0) {
       const intro = ai.message.split("\n")[0]?.trim() || "Got it!";
-      text = `${formatOrderBlock(next.items, intro)}\n\nReply confirm to place your order.`;
-    } else if (/\bmenu\b/i.test(userText) && !next.items.length) {
-      text = `Here's our menu:\n\n${formatMenuForChat(menu)}\n\nWhat would you like?`;
+      text = `${formatOrderBlock(next.items, intro)}\n\nReply confirm to place your order, or tell me what else to add.`;
     }
     return {
       type: "reply",

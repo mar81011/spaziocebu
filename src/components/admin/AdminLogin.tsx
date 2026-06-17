@@ -18,12 +18,12 @@ export function AdminLogin({ onSuccess, useDbAuth }: AdminLoginProps) {
     setError(null);
     setLoading(true);
     try {
-      const ok = await loginAdmin(username, password);
-      if (ok) {
+      const result = await loginAdmin(username, password);
+      if (result.ok) {
         onSuccess();
         return;
       }
-      setError("Incorrect username or password.");
+      setError(result.error ?? "Incorrect username or password.");
       setPassword("");
     } finally {
       setLoading(false);
