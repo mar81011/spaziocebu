@@ -21,28 +21,54 @@ function parseQtyForItem(text: string, itemName: string): number {
   const lower = text.toLowerCase();
   const nameLower = itemName.toLowerCase();
   const escaped = escapeRegex(nameLower).replace(/\s+/g, "\\s+");
+  const wordQtyPattern = "(?:one|two|three|four|five|six|seven|eight|nine|ten|a|an|couple|pair|both)";
   const patterns = [
     new RegExp(`(\\d+)\\s*(?:x\\s*)?${escaped}s?\\b`, "i"),
     new RegExp(`(\\d+)\\s+${escaped}`, "i"),
+    new RegExp(`${wordQtyPattern}\\s+(?:x\\s*)?${escaped}s?\\b`, "i"),
+    new RegExp(`${wordQtyPattern}\\s+${escaped}`, "i"),
   ];
+
+  const nameWords = nameLower.split(/\s+/).filter((word) => isMenuWord(word));
+  if (nameWords.length >= 2) {
+    const flexible = nameWords.map((word) => `${escapeRegex(word)}s?`).join("\\s+");
+    patterns.push(new RegExp(`(\\d+)\\s*(?:x\\s*)?${flexible}\\b`, "i"));
+    patterns.push(new RegExp(`(\\d+)\\s+${flexible}\\b`, "i"));
+    patterns.push(new RegExp(`${wordQtyPattern}\\s+(?:x\\s*)?${flexible}\\b`, "i"));
+    patterns.push(new RegExp(`${wordQtyPattern}\\s+${flexible}\\b`, "i"));
+  }
 
   const firstWord = nameLower.split(/\s+/)[0];
   if (firstWord && isMenuWord(firstWord)) {
-    patterns.push(new RegExp(`(\\d+)\\s*(?:x\\s*)?${escapeRegex(firstWord)}\\b`, "i"));
-    patterns.push(new RegExp(`(\\d+)\\s+${escapeRegex(firstWord)}\\b`, "i"));
+    patterns.push(new RegExp(`(\\d+)\\s*(?:x\\s*)?${escapeRegex(firstWord)}s?\\b`, "i"));
+    patterns.push(new RegExp(`(\\d+)\\s+${escapeRegex(firstWord)}s?\\b`, "i"));
+    patterns.push(new RegExp(`${wordQtyPattern}\\s+(?:x\\s*)?${escapeRegex(firstWord)}s?\\b`, "i"));
+    patterns.push(new RegExp(`${wordQtyPattern}\\s+${escapeRegex(firstWord)}s?\\b`, "i"));
   }
 
   for (const pattern of patterns) {
     const match = lower.match(pattern);
-    if (match) return Math.max(1, parseInt(match[1], 10));
+    if (!match) continue;
+    const parsed = /^\d+$/.test(match[1]) ? parseInt(match[1], 10) : wordToQty(match[1]);
+    if (parsed) return Math.max(1, parsed);
   }
   return 1;
 }
 
-function parseAddonUnitsForDrink(text: string, addonName: string, drinkName: string): number {
+function parseAddonUnitsForDrink(
+  text: string,
+  addonName: string,
+  drinkName: string,
+  existing: OrderLineItem[] = []
+): number {
   const lower = text.toLowerCase();
   const addonEsc = escapeRegex(addonName.toLowerCase());
   const drinkEsc = escapeRegex(drinkName.toLowerCase()).replace(/\s+/g, "\\s+");
+
+  if (/\beach\b|\bapiece\b|\bper\s+drink\b/i.test(lower)) {
+    const drinkQty = countDrinkQty(existing, drinkName);
+    if (drinkQty > 0) return drinkQty;
+  }
 
   const qtyMatch = lower.match(
     new RegExp(`${addonEsc}\\s+(?:on|for|to)\\s+(\\d+)\\s*(?:x\\s*)?${drinkEsc}s?\\b`, "i")
@@ -50,6 +76,14 @@ function parseAddonUnitsForDrink(text: string, addonName: string, drinkName: str
   if (qtyMatch) return Math.max(1, parseInt(qtyMatch[1], 10));
 
   if (new RegExp(`${addonEsc}\\s+(?:on|for|to)\\s+.*?${drinkEsc}`, "i").test(lower)) return 1;
+
+  const wordQtyMatch = lower.match(
+    new RegExp(`(one|two|three|four|five|a|an|couple|pair)\\s+(?:extra\\s+)?${addonEsc}`, "i")
+  );
+  if (wordQtyMatch) {
+    const qty = wordToQty(wordQtyMatch[1]);
+    if (qty) return qty;
+  }
 
   return 1;
 }
@@ -141,6 +175,56 @@ function isMenuWord(word: string) {
   return word.length >= 3;
 }
 
+const WORD_TO_QTY: Record<string, number> = {
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  couple: 2,
+  pair: 2,
+  both: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+};
+
+function wordToQty(word: string): number | null {
+  const qty = WORD_TO_QTY[word.toLowerCase()];
+  return qty ?? null;
+}
+
+function matchesMenuItemName(text: string, itemName: string): boolean {
+  const lower = text.toLowerCase();
+  const key = itemName.toLowerCase();
+  if (lower.includes(key)) return true;
+
+  const words = key.split(/\s+/).filter((word) => isMenuWord(word));
+  if (words.length >= 2) {
+    return words.every((word) => new RegExp(`\\b${escapeRegex(word)}s?\\b`).test(lower));
+  }
+
+  return words.some((word) => new RegExp(`\\b${escapeRegex(word)}\\b`).test(lower));
+}
+
+function countDrinkQty(cart: OrderLineItem[], drinkName: string): number {
+  return cart
+    .filter((item) => !item.forDrink && item.name === drinkName)
+    .reduce((sum, item) => sum + item.qty, 0);
+}
+
+function allDrinkNamesInCart(cart: OrderLineItem[]): string[] {
+  const names = new Set<string>();
+  for (const item of cart) {
+    if (!item.forDrink) names.add(item.name);
+  }
+  return [...names];
+}
+
 function inferSoleDrinkInContext(existing: OrderLineItem[], drinksInMessage: OrderLineItem[]): string | null {
   const counts = new Map<string, number>();
   for (const item of [...existing, ...drinksInMessage]) {
@@ -196,6 +280,11 @@ function findDrinksForAddon(
   const drinkNames = collectDrinkNames(menu, existing);
   const lower = text.toLowerCase();
   const addonLower = addonName.toLowerCase();
+
+  if (/\beach\b|\bapiece\b|\bper\s+drink\b/i.test(lower) && existing.length > 0) {
+    const cartDrinks = allDrinkNamesInCart(existing);
+    if (cartDrinks.length) return cartDrinks;
+  }
 
   const onMatch = lower.match(
     new RegExp(`${escapeRegex(addonLower)}\\s+(?:on|for|to)\\s+(.+?)(?:\\s+and\\s+|$|\\.|!|\\?)`, "i")
@@ -584,15 +673,7 @@ export function parseItemsFromText(
   const matched: Array<{ menuItem: (typeof allItems)[number]; qty: number }> = [];
 
   for (const menuItem of allItems) {
-    const key = menuItem.name.toLowerCase();
-    const words = key.split(/\s+/);
-    const matchedText =
-      lower.includes(key) ||
-      words.some(
-        (word) =>
-          isMenuWord(word) && new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(lower)
-      );
-    if (!matchedText) continue;
+    if (!matchesMenuItemName(lower, menuItem.name)) continue;
 
     const qty = parseQtyForItem(text, menuItem.name);
 
@@ -615,8 +696,19 @@ export function parseItemsFromText(
     const targets = findDrinksForAddon(text, addon.name, menu, existing, drinks);
     if (targets.length) {
       for (const drinkName of targets) {
-        const units = parseAddonUnitsForDrink(text, addon.name, drinkName);
+        const units = parseAddonUnitsForDrink(text, addon.name, drinkName, existing);
         result.push({ ...addon, qty: units, forDrink: drinkName });
+      }
+    } else if (
+      existing.length > 0 &&
+      /\b(add|extra|with)\b/i.test(text) &&
+      /\b(each|apiece|per\s+drink)\b/i.test(text)
+    ) {
+      for (const drinkName of allDrinkNamesInCart(existing)) {
+        const units = countDrinkQty(existing, drinkName);
+        if (units > 0) {
+          result.push({ ...addon, qty: units, forDrink: drinkName });
+        }
       }
     } else {
       result.push(addon);

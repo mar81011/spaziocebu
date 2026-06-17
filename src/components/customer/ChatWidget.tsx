@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { ChatMessage, Menu, Order } from "../../types";
 import { emptySession, processUserMessage } from "../../lib/chat";
 import { buildQuickReplies } from "../../lib/menuIcons";
+import { PLACEHOLDER_EXAMPLES } from "../../lib/orderingGuide";
+import { ChatOrderGuide } from "./ChatOrderGuide";
 import { useOrders } from "../../hooks/useOrders";
 import { useCustomerOrderUpdates } from "../../hooks/useCustomerOrderUpdates";
 import { GcashPaymentCard } from "./GcashPaymentCard";
@@ -22,7 +24,8 @@ interface ChatWidgetProps {
   onQueueConsumed?: () => void;
 }
 
-const OPEN_GREETING = "Hi! What can I get started for you today?";
+const OPEN_GREETING =
+  "Hi! What can I get started for you today?\n\nOrder in plain language — I'll summarise everything before you confirm.";
 const CLOSED_GREETING =
   "We're closed for orders right now. You can still browse the menu — check back soon for pickup.";
 
@@ -50,6 +53,7 @@ export function ChatWidget({
     { id: "0", role: "bot", text: OPEN_GREETING },
   ]);
   const [input, setInput] = useState("");
+  const [placeholderIdx, setPlaceholderIdx] = useState(0);
   const [thinking, setThinking] = useState(false);
   const [listening, setListening] = useState(false);
   const [speechSupported] = useState(
@@ -149,6 +153,14 @@ export function ChatWidget({
   const hasInput = input.trim().length > 0;
   const quickReplies = useMemo(() => buildQuickReplies(menu), [menu]);
 
+  useEffect(() => {
+    if (!open || !isStoreOpen || hasInput || hasUserMessages) return;
+    const id = window.setInterval(() => {
+      setPlaceholderIdx((index) => (index + 1) % PLACEHOLDER_EXAMPLES.length);
+    }, 4500);
+    return () => window.clearInterval(id);
+  }, [open, isStoreOpen, hasInput, hasUserMessages]);
+
   const toggleListening = useCallback(() => {
     if (!speechSupported || !isStoreOpen || thinking) return;
 
@@ -214,7 +226,7 @@ export function ChatWidget({
           </button>
         </div>
 
-        <div className="max-h-[300px] overflow-y-auto bg-gradient-to-b from-[#faf7f2] to-white p-4">
+        <div className="max-h-[340px] overflow-y-auto bg-gradient-to-b from-[#faf7f2] to-white p-4">
           {messages.map((msg) => {
             if (msg.text.includes("Want phone updates? Subscribe to")) return null;
 
@@ -265,13 +277,14 @@ export function ChatWidget({
               …
             </p>
           )}
+          {isStoreOpen && !hasUserMessages && !thinking && <ChatOrderGuide />}
           <div ref={bottomRef} />
         </div>
 
         {isStoreOpen && !hasUserMessages && (
           <div className="border-t border-espresso/6 bg-[#faf7f2]/80 px-4 py-3">
             <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-warm-gray">
-              Suggestions
+              Try saying
             </p>
             <div className="flex flex-wrap gap-2">
               {quickReplies.map((q) => (
@@ -303,7 +316,11 @@ export function ChatWidget({
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isStoreOpen ? "Message Spazio…" : "Closed for orders"}
+            placeholder={
+              isStoreOpen
+                ? `Try: ${PLACEHOLDER_EXAMPLES[placeholderIdx]}`
+                : "Closed for orders"
+            }
             disabled={!isStoreOpen || thinking}
             className="min-w-0 flex-1 rounded-full border border-espresso/12 px-4 py-2.5 text-sm outline-none focus:border-terracotta disabled:cursor-not-allowed disabled:bg-cream/50 disabled:text-warm-gray"
           />

@@ -1,5 +1,6 @@
 import type { Menu } from "../types";
 import { getAllMenuItems } from "./storage";
+import { EXAMPLE_QUICK_REPLIES } from "./orderingGuide";
 
 export type QuickReply = {
   label: string;
@@ -50,5 +51,5 @@ export function buildQuickReplies(menu: Menu): QuickReply[] {
     return [{ label: "View menu", message: "What's on the menu?", icon: "📋" }];
   }
 
-  return [{ label: "View menu", message: "What's on the menu?", icon: "📋" }];
+  return EXAMPLE_QUICK_REPLIES;
 }
