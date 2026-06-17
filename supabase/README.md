@@ -8,6 +8,14 @@ Project dashboard: [rsaoiobpvszinripuocc](https://supabase.com/dashboard/project
 2. Paste the full contents of [`schema.sql`](./schema.sql)
 3. Click **Run**
 
+If menu saves fail with a missing `cost` column, also run [`migration_add_cost.sql`](./migration_add_cost.sql) in the SQL Editor.
+
+For **admin login** and **menu availability toggles**, run [`migration_admin_and_availability.sql`](./migration_admin_and_availability.sql).
+
+Default admin after migration:
+- Username: `admin`
+- Password: `SpazioAdmin2026` (change in Admin → Settings)
+
 This creates:
 
 | Table | Purpose |

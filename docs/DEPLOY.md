@@ -66,6 +66,8 @@ git push -u origin main
 |------|--------|
 | `VITE_SUPABASE_URL` | `https://rsaoiobpvszinripuocc.supabase.co` |
 | `VITE_SUPABASE_ANON_KEY` | your `sb_publishable_...` key |
+| `GEMINI_API_KEY` | your free key from [Google AI Studio](https://aistudio.google.com/apikey) |
+| `VITE_ADMIN_PASSWORD` | your admin password (optional but recommended) |
 
 5. Click **Deploy**
 
@@ -115,6 +117,7 @@ vercel --prod
 ## Files that matter for Vercel
 
 - `vercel.json` — SPA routing (`/admin`, `/admin/menu` work on refresh)
+- `api/chat.js` — AI chatbot (Gemini, menu from Supabase)
 - `api/send-sms.js` — optional SMS proxy (only if you use Semaphore)
 - `.env` is **not** pushed to git — set vars in Vercel dashboard only
 
@@ -127,6 +130,9 @@ Redeploy after `vercel.json` is in the repo (handles client-side routes).
 
 **Supabase not connecting**  
 Check env vars in Vercel → Settings → Environment Variables, then **Redeploy**.
+
+**Chatbot replies with generic fallback text**  
+Add `GEMINI_API_KEY` in Vercel env vars (no `VITE_` prefix) and redeploy. Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
 
 **Old site still showing**  
 Clear browser cache or check you updated the correct Vercel project / domain.

@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { ChatMessage, Menu, Order } from "../../types";
 import { emptySession, processUserMessage } from "../../lib/chat";
+import { buildQuickReplies } from "../../lib/menuIcons";
 import { useOrders } from "../../hooks/useOrders";
 import { useCustomerOrderUpdates } from "../../hooks/useCustomerOrderUpdates";
 import { GcashPaymentCard } from "./GcashPaymentCard";
 import {
-  customerNtfySubscribeHint,
   getPendingChatStatusMessages,
   requestCustomerNotificationPermission,
   trackCustomerOrder,
@@ -20,9 +20,20 @@ interface ChatWidgetProps {
   onQueueConsumed?: () => void;
 }
 
-const QUICK_REPLIES = ["Flat white please", "Show me the full menu", "2 cappuccinos"];
+const OPEN_GREETING = "Hi! What can I get started for you today?";
 const CLOSED_GREETING =
   "We're closed for orders right now. You can still browse the menu — check back soon for pickup.";
+
+function isStalePaymentMessage(text: string, orders: Order[]): boolean {
+  if (text.includes("Want phone updates? Subscribe to")) return true;
+  if (!text.includes("SPAZIO-") && !text.includes("via GCash")) return false;
+
+  const orderId = text.match(/(?:Order #|SPAZIO-)(\d+)/)?.[1];
+  if (!orderId) return false;
+
+  const order = orders.find((o) => o.id === orderId);
+  return Boolean(order && order.status !== "awaiting_payment");
+}
 
 export function ChatWidget({
   open,
@@ -34,9 +45,10 @@ export function ChatWidget({
 }: ChatWidgetProps) {
   const { orders } = useOrders();
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: "0", role: "bot", text: "Hi! What would you like to order today?" },
+    { id: "0", role: "bot", text: OPEN_GREETING },
   ]);
   const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState(false);
   const [session, setSession] = useState(emptySession());
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -53,13 +65,10 @@ export function ChatWidget({
   }, []);
 
   useCustomerOrderUpdates(
-    useCallback(
-      (_order: Order, message: string) => {
-        pushMessage("status", message);
-        onOpenChangeRef.current(true);
-      },
-      [pushMessage]
-    )
+    useCallback((_order: Order, message: string) => {
+      pushMessage("status", message);
+      onOpenChangeRef.current(true);
+    }, [pushMessage])
   );
 
   useEffect(() => {
@@ -72,7 +81,7 @@ export function ChatWidget({
       {
         id: "0",
         role: "bot",
-        text: isStoreOpen ? "Hi! What would you like to order today?" : CLOSED_GREETING,
+        text: isStoreOpen ? OPEN_GREETING : CLOSED_GREETING,
       },
     ]);
     setSession(emptySession());
@@ -81,22 +90,26 @@ export function ChatWidget({
 
   function sendText(text: string) {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || thinking) return;
     pushMessage("user", trimmed);
     setInput("");
+    setThinking(true);
 
-    window.setTimeout(() => {
-      void processUserMessage(trimmed, sessionRef.current, menu, isStoreOpen).then((result) => {
+    const history = messages
+      .filter((m) => m.role === "user" || m.role === "bot")
+      .map((m) => ({ role: m.role as "user" | "bot", text: m.text }));
+
+    void processUserMessage(trimmed, sessionRef.current, menu, isStoreOpen, history)
+      .then((result) => {
         setSession(result.session);
         pushMessage("bot", result.text);
         if (result.type === "order") {
           trackCustomerOrder(result.order.id);
           void requestCustomerNotificationPermission();
           pushMessage("payment", "", result.order.id);
-          pushMessage("bot", customerNtfySubscribeHint(result.order.id));
         }
-      });
-    }, 500);
+      })
+      .finally(() => setThinking(false));
   }
 
   useEffect(() => {
@@ -116,6 +129,9 @@ export function ChatWidget({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, queuedMessage, isStoreOpen]);
+
+  const hasUserMessages = messages.some((m) => m.role === "user");
+  const quickReplies = useMemo(() => buildQuickReplies(menu), [menu]);
 
   return (
     <>
@@ -148,11 +164,15 @@ export function ChatWidget({
 
         <div className="max-h-[300px] overflow-y-auto bg-gradient-to-b from-[#faf7f2] to-white p-4">
           {messages.map((msg) => {
+            if (msg.text.includes("Want phone updates? Subscribe to")) return null;
+
             if (msg.role === "payment" && msg.orderId) {
               const order = orders.find((o) => o.id === msg.orderId);
-              if (order) {
-                return <GcashPaymentCard key={msg.id} order={order} />;
-              }
+              if (!order || order.status !== "awaiting_payment") return null;
+              return <GcashPaymentCard key={msg.id} order={order} />;
+            }
+
+            if (msg.role === "bot" && isStalePaymentMessage(msg.text, orders)) {
               return null;
             }
 
@@ -173,21 +193,35 @@ export function ChatWidget({
               </p>
             );
           })}
+          {thinking && (
+            <p className="mb-2 max-w-[88%] rounded-2xl rounded-bl-sm bg-cream px-4 py-3 text-sm text-warm-gray">
+              …
+            </p>
+          )}
           <div ref={bottomRef} />
         </div>
 
-        {isStoreOpen && (
-          <div className="flex flex-wrap gap-2 px-4 pb-2">
-            {QUICK_REPLIES.map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => sendText(q)}
-                className="rounded-full border border-espresso/10 bg-cream px-3 py-1 text-xs text-espresso"
-              >
-                {q}
-              </button>
-            ))}
+        {isStoreOpen && !hasUserMessages && (
+          <div className="border-t border-espresso/6 bg-[#faf7f2]/80 px-4 py-3">
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-warm-gray">
+              Suggestions
+            </p>
+            <div className="flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {quickReplies.map((q) => (
+                <button
+                  key={`${q.label}-${q.message}`}
+                  type="button"
+                  onClick={() => sendText(q.message)}
+                  className="flex shrink-0 items-center gap-1.5 rounded-xl border border-espresso/10 bg-white px-3.5 py-2 text-xs font-medium text-espresso shadow-sm transition hover:border-terracotta/25 hover:bg-white active:scale-[0.98]"
+                >
+                  <span className="flex items-center gap-0.5 text-sm leading-none" aria-hidden>
+                    <span>{q.icon}</span>
+                    {q.secondaryIcon && <span>{q.secondaryIcon}</span>}
+                  </span>
+                  <span>{q.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -202,13 +236,13 @@ export function ChatWidget({
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isStoreOpen ? "Type your order…" : "Closed for orders"}
-            disabled={!isStoreOpen}
+            placeholder={isStoreOpen ? "Message Spazio…" : "Closed for orders"}
+            disabled={!isStoreOpen || thinking}
             className="flex-1 rounded-full border border-espresso/12 px-4 py-2.5 text-sm outline-none focus:border-terracotta disabled:cursor-not-allowed disabled:bg-cream/50 disabled:text-warm-gray"
           />
           <button
             type="submit"
-            disabled={!isStoreOpen}
+            disabled={!isStoreOpen || thinking}
             className="rounded-full bg-espresso px-4 text-white disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Send"
           >

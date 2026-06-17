@@ -134,8 +134,3 @@ export async function requestCustomerNotificationPermission(): Promise<Notificat
   if (Notification.permission !== "default") return Notification.permission;
   return Notification.requestPermission();
 }
-
-export function customerNtfySubscribeHint(orderId: string): string {
-  const topic = customerOrderTopic(orderId);
-  return `Want phone updates? Subscribe to "${topic}" in the ntfy app (free) — we'll notify you when your order is preparing, ready, or complete.`;
-}

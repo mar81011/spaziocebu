@@ -1,20 +1,43 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Menu } from "../types";
-import { MENU_UPDATED, getMenu } from "../lib/storage";
+import { MENU_UPDATED, applyLocalMenuMirror, getMenu, getPublicMenu, refreshMenu } from "../lib/storage";
 
-export function useMenu() {
-  const [menu, setMenu] = useState<Menu>(getMenu);
+type UseMenuOptions = {
+  publicOnly?: boolean;
+};
 
-  const refresh = useCallback(() => setMenu(getMenu()), []);
+export function useMenu(options: UseMenuOptions = {}) {
+  const { publicOnly = false } = options;
+
+  const selectMenu = useCallback(
+    (menu: Menu) => (publicOnly ? getPublicMenu(menu) : menu),
+    [publicOnly]
+  );
+
+  const [menu, setMenu] = useState(() => selectMenu(getMenu()));
+
+  const refreshFromCache = useCallback(() => {
+    setMenu(selectMenu(getMenu()));
+  }, [selectMenu]);
+
+  const refreshFromDb = useCallback(() => {
+    void refreshMenu().then((next) => setMenu(selectMenu(next)));
+  }, [selectMenu]);
 
   useEffect(() => {
-    window.addEventListener(MENU_UPDATED, refresh);
-    window.addEventListener("storage", refresh);
-    return () => {
-      window.removeEventListener(MENU_UPDATED, refresh);
-      window.removeEventListener("storage", refresh);
+    const onStorage = () => setMenu(selectMenu(applyLocalMenuMirror()));
+    window.addEventListener(MENU_UPDATED, refreshFromCache);
+    window.addEventListener("storage", onStorage);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshFromDb();
     };
-  }, [refresh]);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener(MENU_UPDATED, refreshFromCache);
+      window.removeEventListener("storage", onStorage);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refreshFromCache, refreshFromDb, selectMenu]);
 
-  return { menu, refresh };
+  return { menu, refresh: refreshFromDb };
 }

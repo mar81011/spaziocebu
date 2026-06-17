@@ -1,15 +1,13 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { isDatabaseEnabled } from "../../lib/storage";
 import { logoutAdmin } from "../../lib/adminAuth";
-import { StoreToggle } from "./StoreToggle";
-import { PaymentSettingsPanel } from "./PaymentSettingsPanel";
-import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
 import { useOrderNotifications } from "../../hooks/useOrderNotifications";
 
 const links = [
   { to: "/admin", label: "Orders", end: true },
   { to: "/admin/menu", label: "Menu" },
   { to: "/admin/transactions", label: "Transactions" },
+  { to: "/admin/settings", label: "Settings" },
 ];
 
 export function AdminLayout() {
@@ -17,20 +15,14 @@ export function AdminLayout() {
   useOrderNotifications();
 
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[240px_1fr]">
-      <aside className="flex flex-col gap-8 bg-espresso p-6 text-white">
+    <div className="min-h-screen md:grid md:grid-cols-[220px_1fr]">
+      <aside className="flex flex-col gap-6 bg-espresso p-6 text-white">
         <div>
           <span className="font-serif text-2xl font-semibold tracking-wide">Spazio</span>
           <span className="mt-1 block text-[0.65rem] uppercase tracking-[0.2em] opacity-55">Admin</span>
         </div>
 
-        <StoreToggle />
-
-        <PaymentSettingsPanel />
-
-        <NotificationSettingsPanel />
-
-        <nav>
+        <nav className="flex-1">
           <ul className="flex flex-row flex-wrap gap-2 md:flex-col">
             {links.map((link) => {
               const active = link.end
@@ -60,7 +52,7 @@ export function AdminLayout() {
           </ul>
         </nav>
 
-        <p className="mt-auto space-y-2 text-xs opacity-50">
+        <p className="space-y-2 text-xs opacity-50">
           <button
             type="button"
             onClick={() => {
@@ -72,14 +64,10 @@ export function AdminLayout() {
             Sign out
           </button>
           {isDatabaseEnabled() ? "Supabase" : "Prototype — localStorage"}
-          <br />
-          <Link to="/" className="text-white/80">
-            View homepage
-          </Link>
         </p>
       </aside>
 
-      <main className="overflow-x-auto p-6 md:p-10">
+      <main className="overflow-x-auto bg-cream p-6 md:p-10">
         <Outlet />
       </main>
     </div>

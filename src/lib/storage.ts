@@ -27,6 +27,54 @@ function uid() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function normalizeMenu(menu: Menu): Menu {
+  return {
+    categories: menu.categories.map((cat) => ({
+      ...cat,
+      items: cat.items.map((item) => ({
+        ...item,
+        cost: item.cost ?? 0,
+        isAvailable: item.isAvailable !== false,
+      })),
+    })),
+  };
+}
+
+/** Customer-facing menu — only available items */
+export function getPublicMenu(menu: Menu): Menu {
+  return {
+    categories: menu.categories
+      .map((cat) => ({
+        ...cat,
+        items: cat.items.filter((item) => item.isAvailable !== false),
+      }))
+      .filter((cat) => cat.items.length > 0),
+  };
+}
+
+function setMenuCache(menu: Menu) {
+  menuCache = normalizeMenu(menu);
+  try {
+    localStorage.setItem(MENU_KEY, JSON.stringify(menuCache));
+  } catch {
+    /* storage quota */
+  }
+  emitMenuUpdate();
+}
+
+async function refreshMenuFromDb() {
+  const menu = await db.fetchMenu();
+  setMenuCache(menu);
+  return menu;
+}
+
+function handleMenuSaveError(error: unknown) {
+  console.error("Menu save failed:", error);
+  const message = db.formatDbError(error);
+  window.dispatchEvent(new CustomEvent("spazio-menu-save-error", { detail: message }));
+  void refreshMenuFromDb();
+}
+
 function emitMenuUpdate() {
   window.dispatchEvent(new Event(MENU_UPDATED));
 }
@@ -71,7 +119,7 @@ export async function bootstrapStorage(): Promise<void> {
     paymentCache = db.paymentFromConfig(config);
     notificationCache = db.notificationFromConfig(config);
     ordersCache = await db.fetchOrders();
-    menuCache = await db.fetchMenu();
+    setMenuCache(await db.fetchMenu());
 
     if (ordersCache.length === 0) {
       await seedSampleOrdersDb();
@@ -86,10 +134,7 @@ export async function bootstrapStorage(): Promise<void> {
         });
       },
       onMenu: () => {
-        void db.fetchMenu().then((menu) => {
-          menuCache = menu;
-          emitMenuUpdate();
-        });
+        void refreshMenuFromDb();
       },
       onConfig: () => {
         void db.fetchStoreConfig().then((next) => {
@@ -255,18 +300,39 @@ export function initNotificationSettings() {
   }
 }
 
-export function getMenu(): Menu {
-  const normalize = (menu: Menu): Menu => ({
-    categories: menu.categories.map((cat) => ({
-      ...cat,
-      items: cat.items.map((item) => ({ ...item, cost: item.cost ?? 0 })),
-    })),
-  });
-
-  if (isSupabaseConfigured) return normalize(menuCache ?? defaultMenu());
+export function applyLocalMenuMirror() {
+  if (!isSupabaseConfigured) return getMenu();
   try {
     const data = JSON.parse(localStorage.getItem(MENU_KEY) || "null") as Menu | null;
-    if (data?.categories) return normalize(data);
+    if (data?.categories) menuCache = normalizeMenu(data);
+  } catch {
+    /* empty */
+  }
+  return getMenu();
+}
+
+export function refreshMenu() {
+  if (isSupabaseConfigured) {
+    return refreshMenuFromDb();
+  }
+  emitMenuUpdate();
+  return Promise.resolve(getMenu());
+}
+
+export function getMenu(): Menu {
+  if (isSupabaseConfigured) {
+    if (menuCache) return menuCache;
+    try {
+      const data = JSON.parse(localStorage.getItem(MENU_KEY) || "null") as Menu | null;
+      if (data?.categories) return normalizeMenu(data);
+    } catch {
+      /* empty */
+    }
+    return defaultMenu();
+  }
+  try {
+    const data = JSON.parse(localStorage.getItem(MENU_KEY) || "null") as Menu | null;
+    if (data?.categories) return normalizeMenu(data);
   } catch {
     /* empty */
   }
@@ -274,8 +340,7 @@ export function getMenu(): Menu {
 }
 
 function saveMenuLocal(menu: Menu) {
-  localStorage.setItem(MENU_KEY, JSON.stringify(menu));
-  emitMenuUpdate();
+  setMenuCache(menu);
 }
 
 export function saveMenu(menu: Menu) {
@@ -298,8 +363,7 @@ async function persistFullMenu(menu: Menu) {
       });
     }
   }
-  menuCache = await db.fetchMenu();
-  emitMenuUpdate();
+  await refreshMenuFromDb();
 }
 
 export function initMenu() {
@@ -319,12 +383,11 @@ export function addCategory(title: string) {
   const category = { id: uid(), title: title.trim(), items: [] };
   menu.categories.push(category);
   if (isSupabaseConfigured) {
-    void db.upsertCategory(category.id, category.title, menu.categories.length - 1).then(async () => {
-      menuCache = await db.fetchMenu();
-      emitMenuUpdate();
-    });
-    menuCache = menu;
-    emitMenuUpdate();
+    setMenuCache(menu);
+    void db
+      .upsertCategory(category.id, category.title, menu.categories.length - 1)
+      .then(() => refreshMenuFromDb())
+      .catch(handleMenuSaveError);
     return menu;
   }
   saveMenuLocal(menu);
@@ -337,12 +400,11 @@ export function updateCategory(categoryId: string, title: string) {
   if (cat) cat.title = title.trim();
   if (isSupabaseConfigured) {
     const index = menu.categories.findIndex((c) => c.id === categoryId);
-    void db.upsertCategory(categoryId, title.trim(), index).then(async () => {
-      menuCache = await db.fetchMenu();
-      emitMenuUpdate();
-    });
-    menuCache = menu;
-    emitMenuUpdate();
+    setMenuCache(menu);
+    void db
+      .upsertCategory(categoryId, title.trim(), index)
+      .then(() => refreshMenuFromDb())
+      .catch(handleMenuSaveError);
     return menu;
   }
   saveMenuLocal(menu);
@@ -353,19 +415,18 @@ export function deleteCategory(categoryId: string) {
   const menu = getMenu();
   menu.categories = menu.categories.filter((c) => c.id !== categoryId);
   if (isSupabaseConfigured) {
-    void db.deleteCategoryDb(categoryId).then(async () => {
-      menuCache = await db.fetchMenu();
-      emitMenuUpdate();
-    });
-    menuCache = menu;
-    emitMenuUpdate();
+    setMenuCache(menu);
+    void db
+      .deleteCategoryDb(categoryId)
+      .then(() => refreshMenuFromDb())
+      .catch(handleMenuSaveError);
     return menu;
   }
   saveMenuLocal(menu);
   return menu;
 }
 
-export function addMenuItem(
+export async function addMenuItem(
   categoryId: string,
   item: Pick<MenuItem, "name" | "description" | "price">
 ) {
@@ -378,31 +439,34 @@ export function addMenuItem(
     description: item.description.trim(),
     price: item.price,
     cost: 0,
+    isAvailable: true,
   };
   cat.items.push(newItem);
   if (isSupabaseConfigured) {
-    void db
-      .upsertMenuItem({
+    setMenuCache(menu);
+    try {
+      const catIndex = menu.categories.findIndex((c) => c.id === categoryId);
+      await db.upsertCategory(cat.id, cat.title, Math.max(0, catIndex));
+      await db.upsertMenuItem({
         ...newItem,
         categoryId,
         sortOrder: cat.items.length - 1,
-      })
-      .then(async () => {
-        menuCache = await db.fetchMenu();
-        emitMenuUpdate();
       });
-    menuCache = menu;
-    emitMenuUpdate();
+      await refreshMenuFromDb();
+    } catch (error) {
+      handleMenuSaveError(error);
+      throw error;
+    }
     return menu;
   }
   saveMenuLocal(menu);
   return menu;
 }
 
-export function updateMenuItem(
+export async function updateMenuItem(
   categoryId: string,
   itemId: string,
-  updates: Partial<Pick<MenuItem, "name" | "description" | "price">>
+  updates: Partial<Pick<MenuItem, "name" | "description" | "price" | "isAvailable">>
 ) {
   const menu = getMenu();
   const cat = menu.categories.find((c) => c.id === categoryId);
@@ -411,20 +475,21 @@ export function updateMenuItem(
   if (updates.name !== undefined) item.name = updates.name.trim();
   if (updates.description !== undefined) item.description = updates.description.trim();
   if (updates.price !== undefined) item.price = updates.price;
+  if (updates.isAvailable !== undefined) item.isAvailable = updates.isAvailable;
   if (isSupabaseConfigured) {
     const sortOrder = cat?.items.findIndex((i) => i.id === itemId) ?? 0;
-    void db
-      .upsertMenuItem({
+    setMenuCache(menu);
+    try {
+      await db.upsertMenuItem({
         ...item,
         categoryId,
         sortOrder,
-      })
-      .then(async () => {
-        menuCache = await db.fetchMenu();
-        emitMenuUpdate();
       });
-    menuCache = menu;
-    emitMenuUpdate();
+      await refreshMenuFromDb();
+    } catch (error) {
+      handleMenuSaveError(error);
+      throw error;
+    }
     return menu;
   }
   saveMenuLocal(menu);
@@ -436,12 +501,11 @@ export function deleteMenuItem(categoryId: string, itemId: string) {
   const cat = menu.categories.find((c) => c.id === categoryId);
   if (cat) cat.items = cat.items.filter((i) => i.id !== itemId);
   if (isSupabaseConfigured) {
-    void db.deleteMenuItemDb(itemId).then(async () => {
-      menuCache = await db.fetchMenu();
-      emitMenuUpdate();
-    });
-    menuCache = menu;
-    emitMenuUpdate();
+    setMenuCache(menu);
+    void db
+      .deleteMenuItemDb(itemId)
+      .then(() => refreshMenuFromDb())
+      .catch(handleMenuSaveError);
     return menu;
   }
   saveMenuLocal(menu);

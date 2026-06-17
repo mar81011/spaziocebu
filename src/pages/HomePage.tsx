@@ -11,7 +11,7 @@ import { useMenu } from "../hooks/useMenu";
 import { useStoreStatus } from "../hooks/useStoreStatus";
 
 export function HomePage() {
-  const { menu } = useMenu();
+  const { menu } = useMenu({ publicOnly: true });
   const { isOpen: isStoreOpen } = useStoreStatus();
   const [chatOpen, setChatOpen] = useState(false);
   const [queuedMessage, setQueuedMessage] = useState<string | null>(null);

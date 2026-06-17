@@ -60,9 +60,41 @@ export function GcashPaymentCard({ order }: GcashPaymentCardProps) {
         </div>
       </div>
 
-      <p className="mt-3 text-xs leading-relaxed text-warm-gray">
-        Open GCash → Send → enter the number → amount {formatCurrency(order.total)} → use the
-        reference above. We'll prepare your order after payment is confirmed.
+      <ol className="mt-4 space-y-2 text-xs leading-relaxed text-warm-gray">
+        <li className="flex gap-2">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#007cff]/10 text-[10px] font-semibold text-[#007cff]">
+            1
+          </span>
+          <span>Open GCash and tap <strong className="font-medium text-espresso">Send</strong></span>
+        </li>
+        <li className="flex gap-2">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#007cff]/10 text-[10px] font-semibold text-[#007cff]">
+            2
+          </span>
+          <span>
+            Enter the number above — <strong className="font-medium text-espresso">{settings.gcashAccountName}</strong>
+          </span>
+        </li>
+        <li className="flex gap-2">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#007cff]/10 text-[10px] font-semibold text-[#007cff]">
+            3
+          </span>
+          <span>
+            Amount: <strong className="font-medium text-espresso">{formatCurrency(order.total)}</strong>
+          </span>
+        </li>
+        <li className="flex gap-2">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#007cff]/10 text-[10px] font-semibold text-[#007cff]">
+            4
+          </span>
+          <span>
+            Reference: <strong className="font-mono font-medium text-espresso">{reference}</strong>
+          </span>
+        </li>
+      </ol>
+
+      <p className="mt-3 rounded-lg bg-white/60 px-3 py-2 text-xs text-warm-gray">
+        We'll start preparing your order once payment is confirmed.
       </p>
     </div>
   );

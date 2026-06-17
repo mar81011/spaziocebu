@@ -3,6 +3,7 @@ import { AdminGate } from "../components/admin/AdminGate";
 import { AdminLayout } from "../components/admin/AdminLayout";
 import { MenuPanel } from "../components/admin/MenuPanel";
 import { OrdersPanel } from "../components/admin/OrdersPanel";
+import { SettingsPanel } from "../components/admin/SettingsPanel";
 import { TransactionsPanel } from "../components/admin/TransactionsPanel";
 
 export function AdminPage() {
@@ -13,6 +14,7 @@ export function AdminPage() {
           <Route index element={<OrdersPanel />} />
           <Route path="menu" element={<MenuPanel />} />
           <Route path="transactions" element={<TransactionsPanel />} />
+          <Route path="settings" element={<SettingsPanel />} />
         </Route>
       </Routes>
     </AdminGate>

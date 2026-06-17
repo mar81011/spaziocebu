@@ -42,6 +42,8 @@ export interface MenuItem {
   description: string;
   price: number;
   cost?: number;
+  /** When false, hidden from customer menu and chat ordering */
+  isAvailable?: boolean;
 }
 
 export interface MenuCategory {

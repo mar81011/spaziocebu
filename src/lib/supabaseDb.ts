@@ -38,6 +38,17 @@ function assertClient() {
   return supabase;
 }
 
+export function formatDbError(error: unknown): string {
+  if (!error) return "Unknown database error.";
+  if (typeof error === "object") {
+    const row = error as { message?: string; details?: string; hint?: string; code?: string };
+    const parts = [row.message, row.details, row.hint, row.code ? `(${row.code})` : ""].filter(Boolean);
+    if (parts.length) return parts.join(" — ");
+  }
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 function rowToOrder(row: OrderRow): Order {
   return {
     id: String(row.id),
@@ -110,6 +121,7 @@ export async function fetchMenu(): Promise<Menu> {
             description: item.description,
             price: Number(item.price),
             cost: Number(item.cost ?? 0),
+            isAvailable: item.is_available !== false,
           })
         ),
     })),
@@ -231,20 +243,52 @@ export async function deleteCategoryDb(id: string): Promise<void> {
   if (error) throw error;
 }
 
+const AVAILABILITY_MIGRATION_HINT =
+  "Run supabase/migration_admin_and_availability.sql in the Supabase SQL Editor to enable availability toggles.";
+
 export async function upsertMenuItem(
   item: MenuItem & { categoryId: string; sortOrder: number }
 ): Promise<void> {
   const client = assertClient();
-  const { error } = await client.from("menu_items").upsert({
+  const base = {
     id: item.id,
     category_id: item.categoryId,
     name: item.name,
     description: item.description,
     price: item.price,
-    cost: item.cost ?? 0,
     sort_order: item.sortOrder,
-  });
-  if (error) throw error;
+  };
+  const isAvailable = item.isAvailable !== false;
+  const mustPersistAvailability = item.isAvailable === false;
+
+  const attempts: Record<string, unknown>[] = [
+    { ...base, cost: item.cost ?? 0, is_available: isAvailable },
+    { ...base, is_available: isAvailable },
+    { ...base, cost: item.cost ?? 0 },
+    { ...base },
+  ];
+
+  let lastError: { code?: string; message?: string } | null = null;
+
+  for (const row of attempts) {
+    const { error } = await client.from("menu_items").upsert(row);
+    if (!error) {
+      if (mustPersistAvailability && !("is_available" in row)) {
+        throw new Error(`Could not save item availability. ${AVAILABILITY_MIGRATION_HINT}`);
+      }
+      return;
+    }
+    if (error.code === "PGRST204") {
+      lastError = error;
+      continue;
+    }
+    throw error;
+  }
+
+  if (mustPersistAvailability) {
+    throw new Error(`Could not save item availability. ${AVAILABILITY_MIGRATION_HINT}`);
+  }
+  if (lastError) throw lastError;
 }
 
 export async function deleteMenuItemDb(id: string): Promise<void> {
@@ -294,4 +338,39 @@ export function subscribeToDbChanges(handlers: {
   return () => {
     void client.removeChannel(channel);
   };
+}
+
+export async function hasAdminUsers(): Promise<boolean> {
+  const client = assertClient();
+  const { data, error } = await client.rpc("has_admin_users");
+  if (error) {
+    console.warn("has_admin_users RPC unavailable:", error.message);
+    return false;
+  }
+  return Boolean(data);
+}
+
+export async function verifyAdminLogin(username: string, password: string): Promise<boolean> {
+  const client = assertClient();
+  const { data, error } = await client.rpc("verify_admin_login", {
+    p_username: username.trim(),
+    p_password: password,
+  });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function updateAdminPassword(
+  username: string,
+  oldPassword: string,
+  newPassword: string
+): Promise<boolean> {
+  const client = assertClient();
+  const { data, error } = await client.rpc("update_admin_password", {
+    p_username: username.trim(),
+    p_old_password: oldPassword,
+    p_new_password: newPassword,
+  });
+  if (error) throw error;
+  return Boolean(data);
 }

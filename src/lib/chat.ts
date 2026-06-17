@@ -1,7 +1,8 @@
 import type { ChatSession, Menu, Order, OrderLineItem } from "../types";
-import { addOrder, getAllMenuItems, getPaymentSettings } from "./storage";
+import { addOrder, getAllMenuItems } from "./storage";
 import { formatCurrency } from "./format";
-import { buildGcashPaymentMessage } from "./payment";
+
+export type ChatHistoryEntry = { role: "user" | "bot"; text: string };
 
 export function emptySession(): ChatSession {
   return { items: [], awaitingConfirm: false, awaitingName: false };
@@ -13,17 +14,24 @@ function sessionTotal(items: OrderLineItem[]) {
 
 function sessionSummary(items: OrderLineItem[]) {
   return items
-    .map((i) => `${i.qty}× ${i.name} (${formatCurrency(i.price * i.qty)})`)
-    .join(", ");
+    .map((i) => `• ${i.qty}× ${i.name} — ${formatCurrency(i.price * i.qty)}`)
+    .join("\n");
+}
+
+function formatOrderBlock(items: OrderLineItem[], intro: string) {
+  if (!items.length) return intro;
+  return `${intro}\n\n${sessionSummary(items)}\n\nTotal: ${formatCurrency(sessionTotal(items))}`;
 }
 
 export function formatMenuForChat(menu: Menu) {
   return menu.categories
     .map((cat) => {
-      const lines = cat.items.map((i) => `${i.name} ${formatCurrency(i.price)}`).join(", ");
-      return `${cat.title}: ${lines}`;
+      const lines = cat.items
+        .map((i) => `• ${i.name} — ${formatCurrency(i.price)}`)
+        .join("\n");
+      return `${cat.title}\n${lines}`;
     })
-    .join(" · ");
+    .join("\n\n");
 }
 
 export function parseItemsFromText(text: string, menu: Menu): OrderLineItem[] {
@@ -47,6 +55,90 @@ export function parseItemsFromText(text: string, menu: Menu): OrderLineItem[] {
   return items;
 }
 
+type AiChatResponse = {
+  message: string;
+  items: OrderLineItem[];
+  awaitingConfirm: boolean;
+};
+
+async function callAiChat(
+  message: string,
+  session: ChatSession,
+  menu: Menu,
+  storeOpen: boolean,
+  history: ChatHistoryEntry[]
+): Promise<AiChatResponse | null> {
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        session,
+        history,
+        menu,
+        store: { isOpen: storeOpen },
+      }),
+    });
+
+    if (!response.ok) {
+      if (import.meta.env.DEV) {
+        const err = await response.json().catch(() => ({}));
+        console.warn("[Spazio chat] AI unavailable, using fallback:", err?.error ?? response.status);
+      }
+      return null;
+    }
+    const data = await response.json();
+    if (!data?.message) return null;
+
+    return {
+      message: data.message,
+      items: Array.isArray(data.items) ? data.items : session.items,
+      awaitingConfirm: Boolean(data.awaitingConfirm),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function processWithRules(
+  userText: string,
+  session: ChatSession,
+  menu: Menu
+): { text: string; session: ChatSession } {
+  const lower = userText.toLowerCase().trim();
+  let next = { ...session, items: [...session.items] };
+
+  if (lower.includes("menu")) {
+    return {
+      session: next,
+      text: `Here's our menu:\n\n${formatMenuForChat(menu)}\n\nWhat would you like?`,
+    };
+  }
+
+  const parsed = parseItemsFromText(userText, menu);
+  if (parsed.length > 0) {
+    next.items = parsed;
+    next.awaitingConfirm = true;
+    return {
+      session: next,
+      text: `${formatOrderBlock(next.items, "Got it!")}\n\nReply confirm to place your order.`,
+    };
+  }
+
+  if (next.items.length > 0) {
+    return {
+      session: next,
+      text: "Reply confirm to place your order, or tell me what else to add.",
+    };
+  }
+
+  return {
+    session: next,
+    text: 'Tell me what you\'d like — e.g. "flat white and a croissant" — and I\'ll summarise your order.',
+  };
+}
+
 export type BotResult =
   | { type: "reply"; text: string; session: ChatSession }
   | { type: "order"; text: string; session: ChatSession; order: Order };
@@ -55,7 +147,8 @@ export async function processUserMessage(
   userText: string,
   session: ChatSession,
   menu: Menu,
-  storeOpen = true
+  storeOpen = true,
+  history: ChatHistoryEntry[] = []
 ): Promise<BotResult> {
   const lower = userText.toLowerCase().trim();
   let next = { ...session, items: [...session.items] };
@@ -69,62 +162,53 @@ export async function processUserMessage(
   }
 
   if (next.awaitingName) {
-    const name = userText.replace(/^(i'm|i am|my name is)\s+/i, "").trim() || userText;
+    const name = userText.replace(/^(i'm|i am|my name is|name is|it's|its)\s+/i, "").trim() || userText;
     const order = await addOrder({
       customerName: name,
       items: next.items,
       notes: "Via chat",
     });
     const cleared = emptySession();
-    const payment = buildGcashPaymentMessage(order, getPaymentSettings());
     return {
       type: "order",
       session: cleared,
       order,
-      text: `Thanks ${name}! Order #${order.id} is reserved for pickup.\n\n${payment}`,
+      text: `Thanks ${name}! Order #${order.id} is reserved for pickup. Pay via GCash below — we'll start preparing once payment is received.`,
     };
   }
 
-  if (next.awaitingConfirm && (lower === "confirm" || lower === "yes" || lower.includes("confirm"))) {
+  if (next.awaitingConfirm && (lower === "confirm" || lower === "yes" || lower === "y" || lower.includes("confirm"))) {
     next.awaitingConfirm = false;
     next.awaitingName = true;
     return {
       type: "reply",
       session: next,
-      text: `Total: ${formatCurrency(sessionTotal(next.items))}. What's your name?`,
+      text: `${formatOrderBlock(next.items, "Your order:")}\n\nWhat's your name for the order?`,
     };
   }
 
-  if (lower.includes("menu")) {
+  const ai = await callAiChat(userText, next, menu, storeOpen, history);
+  if (ai) {
+    next.items = ai.items;
+    next.awaitingConfirm = ai.awaitingConfirm;
+    let text = ai.message;
+    if (next.awaitingConfirm && next.items.length > 0) {
+      const intro = ai.message.split("\n")[0]?.trim() || "Got it!";
+      text = `${formatOrderBlock(next.items, intro)}\n\nReply confirm to place your order.`;
+    } else if (/\bmenu\b/i.test(userText) && !next.items.length) {
+      text = `Here's our menu:\n\n${formatMenuForChat(menu)}\n\nWhat would you like?`;
+    }
     return {
       type: "reply",
       session: next,
-      text: `Here's our menu — ${formatMenuForChat(menu)}. What would you like?`,
+      text,
     };
   }
 
-  const parsed = parseItemsFromText(userText, menu);
-  if (parsed.length > 0) {
-    next.items = parsed;
-    next.awaitingConfirm = true;
-    return {
-      type: "reply",
-      session: next,
-      text: `Got it — ${sessionSummary(next.items)}. Total ${formatCurrency(sessionTotal(next.items))}. Reply confirm to place your order.`,
-    };
-  }
-
-  if (next.items.length > 0) {
-    return {
-      type: "reply",
-      session: next,
-      text: "Reply confirm to place your order, or tell me what else to add.",
-    };
-  }
-
+  const fallback = processWithRules(userText, next, menu);
   return {
     type: "reply",
-    session: next,
-    text: 'Tell me what you\'d like — e.g. "flat white and a croissant" — and I\'ll summarise your order.',
+    session: fallback.session,
+    text: fallback.text,
   };
 }

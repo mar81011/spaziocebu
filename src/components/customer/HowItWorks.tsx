@@ -1,18 +1,18 @@
 const steps = [
   {
     num: "01",
-    title: "Open the chat",
-    text: "Tap the chat button anywhere on the page. No sign-up required.",
+    title: "Pick your drinks",
+    text: "Browse the menu below and tap what you want — or open chat and tell us your order.",
   },
   {
     num: "02",
-    title: "Say what you want",
-    text: 'Order like you\'re texting a friend — "2 flat whites and a croissant" works perfectly.',
+    title: "Confirm in chat",
+    text: 'We summarise your order and total. Reply confirm, then pay via GCash.',
   },
   {
     num: "03",
-    title: "Confirm & done",
-    text: "We summarise your order and total. Confirm once and you're all set.",
+    title: "Pick up",
+    text: "We'll notify you when your order is ready for pickup.",
   },
 ];
 

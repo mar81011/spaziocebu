@@ -2,9 +2,22 @@ import { useState } from "react";
 import { useNotificationSettings } from "../../hooks/useNotificationSettings";
 import { requestBrowserNotificationPermission, sendTestOwnerAlert } from "../../lib/notify";
 
-export function NotificationSettingsPanel() {
+type NotificationSettingsPanelProps = {
+  variant?: "sidebar" | "page";
+};
+
+export function NotificationSettingsPanel({ variant = "sidebar" }: NotificationSettingsPanelProps) {
   const { settings, update } = useNotificationSettings();
   const [testStatus, setTestStatus] = useState<string | null>(null);
+  const isPage = variant === "page";
+
+  const muted = isPage ? "text-warm-gray" : "text-white/55";
+  const label = isPage ? "text-warm-gray" : "text-white/70";
+  const input =
+    "mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-terracotta " +
+    (isPage
+      ? "border-espresso/12 bg-white text-espresso"
+      : "border-white/15 bg-white/10 text-white placeholder:text-white/40");
 
   async function sendTest() {
     setTestStatus(null);
@@ -24,16 +37,18 @@ export function NotificationSettingsPanel() {
   const ntfyReady = settings.ntfyTopic.trim().length > 0;
 
   return (
-    <div className="rounded-lg bg-white/10 p-4">
+    <div className={isPage ? "space-y-3" : "rounded-lg bg-white/10 p-4"}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium">Order alerts</p>
+        <p className={`text-sm font-medium ${isPage ? "text-espresso" : ""}`}>
+          {isPage ? "Enable alerts" : "Order alerts"}
+        </p>
         <button
           type="button"
           role="switch"
           aria-checked={settings.alertsEnabled}
           onClick={() => update({ ...settings, alertsEnabled: !settings.alertsEnabled })}
           className={`relative h-6 w-11 shrink-0 rounded-full transition ${
-            settings.alertsEnabled ? "bg-sage" : "bg-white/20"
+            settings.alertsEnabled ? "bg-sage" : isPage ? "bg-espresso/20" : "bg-white/20"
           }`}
         >
           <span
@@ -43,28 +58,30 @@ export function NotificationSettingsPanel() {
           />
         </button>
       </div>
-      <p className="mt-0.5 text-xs text-white/55">
-        Free push to your phone when a customer confirms an order
-      </p>
+      {!isPage && (
+        <p className={`mt-0.5 text-xs ${muted}`}>
+          Free push to your phone when a customer confirms an order
+        </p>
+      )}
 
       {settings.alertsEnabled && (
         <div className="mt-3 space-y-3">
-          <label className="block text-xs text-white/70">
+          <label className={`block text-xs ${label}`}>
             ntfy topic
             <input
               value={settings.ntfyTopic}
               onChange={(e) => update({ ...settings, ntfyTopic: e.target.value })}
-              className="mt-1 w-full rounded-md border border-white/15 bg-white/10 px-2.5 py-2 text-sm text-white placeholder:text-white/40"
+              className={input}
               placeholder="Spazio"
             />
           </label>
-          <p className="text-[0.65rem] leading-relaxed text-white/45">
+          <p className={`text-[0.65rem] leading-relaxed ${muted}`}>
             Subscribe to{" "}
             <a
               href={`https://ntfy.sh/${encodeURIComponent(settings.ntfyTopic || "Spazio")}`}
               target="_blank"
               rel="noreferrer"
-              className="text-white/70 underline"
+              className={isPage ? "text-terracotta underline" : "text-white/70 underline"}
             >
               ntfy.sh/{settings.ntfyTopic || "Spazio"}
             </a>{" "}
@@ -73,7 +90,7 @@ export function NotificationSettingsPanel() {
               href="https://ntfy.sh/app"
               target="_blank"
               rel="noreferrer"
-              className="text-white/70 underline"
+              className={isPage ? "text-terracotta underline" : "text-white/70 underline"}
             >
               ntfy app
             </a>
@@ -84,45 +101,50 @@ export function NotificationSettingsPanel() {
             type="button"
             onClick={() => void sendTest()}
             disabled={!ntfyReady}
-            className="w-full rounded-md border border-white/15 px-2.5 py-2 text-xs text-white/80 disabled:opacity-40"
+            className={
+              "w-full rounded-lg border px-2.5 py-2 text-xs disabled:opacity-40 " +
+              (isPage
+                ? "border-espresso/12 text-espresso"
+                : "border-white/15 text-white/80")
+            }
           >
             Send test alert
           </button>
-          {testStatus && <p className="text-xs text-white/60">{testStatus}</p>}
+          {testStatus && <p className={`text-xs ${muted}`}>{testStatus}</p>}
 
-          <details className="text-xs text-white/55">
-            <summary className="cursor-pointer text-white/70">Paid SMS (optional)</summary>
+          <details className={`text-xs ${muted}`}>
+            <summary className={`cursor-pointer ${isPage ? "text-espresso" : "text-white/70"}`}>Paid SMS (optional)</summary>
             <div className="mt-2 space-y-2">
-              <label className="block text-white/70">
+              <label className={`block ${label}`}>
                 Your mobile number
                 <input
                   value={settings.ownerPhone}
                   onChange={(e) => update({ ...settings, ownerPhone: e.target.value })}
-                  className="mt-1 w-full rounded-md border border-white/15 bg-white/10 px-2.5 py-2 text-sm text-white"
+                  className={input}
                   placeholder="09171234567"
                 />
               </label>
-              <label className="block text-white/70">
+              <label className={`block ${label}`}>
                 Semaphore API key
                 <input
                   value={settings.semaphoreApiKey}
                   onChange={(e) => update({ ...settings, semaphoreApiKey: e.target.value })}
-                  className="mt-1 w-full rounded-md border border-white/15 bg-white/10 px-2.5 py-2 text-sm text-white"
+                  className={input}
                   placeholder="From semaphore.co"
                 />
               </label>
             </div>
           </details>
 
-          <details className="text-xs text-white/55">
-            <summary className="cursor-pointer text-white/70">More options</summary>
+          <details className={`text-xs ${muted}`}>
+            <summary className={`cursor-pointer ${isPage ? "text-espresso" : "text-white/70"}`}>More options</summary>
             <div className="mt-2 space-y-2">
-              <label className="block text-white/70">
+              <label className={`block ${label}`}>
                 Webhook URL
                 <input
                   value={settings.webhookUrl}
                   onChange={(e) => update({ ...settings, webhookUrl: e.target.value })}
-                  className="mt-1 w-full rounded-md border border-white/15 bg-white/10 px-2.5 py-2 text-sm text-white"
+                  className={input}
                   placeholder="https://hooks.zapier.com/..."
                 />
               </label>

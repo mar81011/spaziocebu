@@ -1,14 +1,21 @@
 import { useStoreStatus } from "../../hooks/useStoreStatus";
 
-export function StoreToggle() {
+type StoreToggleProps = {
+  variant?: "sidebar" | "page";
+};
+
+export function StoreToggle({ variant = "sidebar" }: StoreToggleProps) {
   const { isOpen, setOpen } = useStoreStatus();
+  const isPage = variant === "page";
 
   return (
-    <div className="rounded-lg bg-white/10 p-4">
+    <div className={isPage ? "" : "rounded-lg bg-white/10 p-4"}>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium">{isOpen ? "Open for orders" : "Closed"}</p>
-          <p className="mt-0.5 text-xs text-white/55">
+          <p className={`text-sm font-medium ${isPage ? "text-espresso" : ""}`}>
+            {isOpen ? "Open for orders" : "Closed"}
+          </p>
+          <p className={`mt-0.5 text-xs ${isPage ? "text-warm-gray" : "text-white/55"}`}>
             {isOpen ? "Customers can place orders" : "Ordering is paused on the site"}
           </p>
         </div>
@@ -19,7 +26,7 @@ export function StoreToggle() {
           aria-label={isOpen ? "Close store" : "Open store"}
           onClick={() => setOpen(!isOpen)}
           className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
-            isOpen ? "bg-[#6dd47e]" : "bg-white/25"
+            isOpen ? "bg-[#6dd47e]" : isPage ? "bg-espresso/20" : "bg-white/25"
           }`}
         >
           <span
