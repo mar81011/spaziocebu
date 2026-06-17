@@ -111,6 +111,28 @@ function isAddonMenuItem(item: { name: string; category: string; price: number }
   return /shot|swap|syrup|milk|extra/i.test(item.name) && item.price < 80;
 }
 
+function isAddonLineName(name: string, menu: Menu) {
+  const menuItem = getAllMenuItems(menu).find((item) => item.name === name);
+  return menuItem ? isAddonMenuItem(menuItem) : false;
+}
+
+function sanitizeCart(items: OrderLineItem[], menu: Menu): OrderLineItem[] {
+  const cleaned = items
+    .filter((item) => !item.forDrink || isAddonLineName(item.name, menu))
+    .map((item) => {
+      if (item.forDrink && item.forDrink === item.name) {
+        const { forDrink: _, bundleId: __, ...rest } = item;
+        return rest;
+      }
+      return item;
+    });
+  return finalizeCart(cleaned);
+}
+
+function isClarifyingMessage(text: string) {
+  return /\?|would you like|just to clarify|did you mean|which one|let me know/i.test(text);
+}
+
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -187,7 +209,7 @@ function findDrinksForAddon(
     if (found.length) return found;
   }
 
-  if (/for the other one add/i.test(lower)) {
+  if (/for the other(?: one)? add/i.test(lower)) {
     const sole = inferSoleDrinkInContext(existing, drinksInMessage);
     if (sole) return [sole];
   }
@@ -497,16 +519,30 @@ export async function processUserMessage(
     };
   }
 
+  const ruleParsed = parseItemsFromText(userText, menu, next.items);
   const ai = await callAiChat(userText, next, menu, storeOpen, history);
   if (ai) {
-    next.items = resolveAiCart(next.items, ai.items);
-    next.awaitingConfirm = ai.awaitingConfirm || next.items.length > 0;
+    if (ruleParsed.length > 0) {
+      next.items =
+        next.items.length > 0 ? mergeCartItems(next.items, ruleParsed) : ruleParsed;
+    } else {
+      next.items = sanitizeCart(resolveAiCart(next.items, ai.items), menu);
+    }
+    next.awaitingConfirm = next.items.length > 0;
     let text = ai.message;
     if (isMenuRequest(lower)) {
       text = formatMenuReply(menu, next.items);
-    } else if (next.awaitingConfirm && next.items.length > 0) {
-      const intro = ai.message.split("\n")[0]?.trim() || "Got it!";
-      text = `${formatOrderBlock(next.items, intro)}\n\nReply confirm to place your order, or tell me what else to add.`;
+    } else if (next.items.length > 0) {
+      const usedRuleCart = ruleParsed.length > 0;
+      let intro = "Got it!";
+      let lead = "";
+      if (!usedRuleCart && isClarifyingMessage(ai.message)) {
+        lead = `${ai.message}\n\n`;
+        intro = "Here's what I have:";
+      } else if (!usedRuleCart) {
+        intro = ai.message.split("\n")[0]?.trim() || "Got it!";
+      }
+      text = `${lead}${formatOrderBlock(next.items, intro)}\n\nReply confirm to place your order, or tell me what else to add.`;
     }
     return {
       type: "reply",

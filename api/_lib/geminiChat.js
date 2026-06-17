@@ -73,9 +73,10 @@ STRICT RULES:
 8. After summarising items for checkout, ask the customer to reply "confirm" to continue.
 9. Keep replies short, warm, and helpful.
 10. Understand casual names (e.g. "cap" → Cappuccino, "croissant" → Almond Croissant) only when they clearly match a MENU_DATA item.
-11. Add-ons (Extra shot, Oat milk swap, Vanilla syrup, etc.) must say which drink they apply to. In cart entries, set forDrink to the exact drink name from MENU_DATA. When the same drink appears multiple times with different modifiers (e.g. "2 Spazio, extra shot on one and oat on the other"), split into separate cart lines — one drink per modifier bundle, never merge different modifier combos into one qty line.
-12. Do not discuss unrelated topics — gently redirect to ordering.
-13. Prices in MENU_DATA are in Philippine Pesos (₱). Never guess prices.
+11. Add-ons (Extra shot, Oat milk swap, Vanilla syrup, etc.) must say which drink they apply to. Only add-on itemIds may use forDrink — never set forDrink on a coffee/drink itemId. When the same drink appears multiple times with different modifiers (e.g. "2 Spazio, extra shot on one and oat on the other"), split into separate cart lines — one drink per modifier bundle, never merge different modifier combos into one qty line.
+12. If the order is already clear from the customer message, update the cart immediately — do not ask clarifying questions.
+13. Do not discuss unrelated topics — gently redirect to ordering.
+14. Prices in MENU_DATA are in Philippine Pesos (₱). Never guess prices.
 
 MENU_DATA:
 ${menuJson}
@@ -166,6 +167,16 @@ function cartLineKey(item) {
   return `${item.name}::${item.forDrink ?? ""}`;
 }
 
+function isAddonItemId(menu, itemId) {
+  for (const cat of menu.categories) {
+    if (!/add|extra|modifier/i.test(cat.title)) continue;
+    const item = cat.items.find((row) => row.id === itemId);
+    if (!item) continue;
+    return /shot|swap|syrup|milk|extra/i.test(item.name) && Number(item.price) < 80;
+  }
+  return false;
+}
+
 function cartFromIds(cart, menu) {
   const byId = new Map();
   for (const cat of menu.categories) {
@@ -179,8 +190,11 @@ function cartFromIds(cart, menu) {
     const item = byId.get(entry.itemId);
     if (!item) continue;
     const qty = Math.max(1, Math.min(99, Number(entry.qty) || 1));
-    const forDrink =
+    let forDrink =
       typeof entry.forDrink === "string" && entry.forDrink.trim() ? entry.forDrink.trim() : undefined;
+    if (forDrink && !isAddonItemId(menu, entry.itemId)) {
+      forDrink = undefined;
+    }
     const line = { name: item.name, qty, price: item.price, forDrink };
     const existing = items.find((i) => cartLineKey(i) === cartLineKey(line));
     if (existing) existing.qty += qty;
