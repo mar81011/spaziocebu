@@ -226,6 +226,11 @@ function findDrinksForAddon(
   return [];
 }
 
+function formatAddonLine(addon: OrderLineItem) {
+  const indent = "\u00A0\u00A0\u00A0\u00A0";
+  return `${indent}↳ ${addon.qty}× ${addon.name} — ${formatCurrency(addon.price * addon.qty)}`;
+}
+
 function sessionSummary(items: OrderLineItem[]) {
   const drinks = items.filter((item) => !item.forDrink);
   const addons = items.filter((item) => item.forDrink);
@@ -238,7 +243,7 @@ function sessionSummary(items: OrderLineItem[]) {
       shownBundles.add(drink.bundleId);
       lines.push(`• ${drink.qty}× ${drink.name} — ${formatCurrency(drink.price * drink.qty)}`);
       for (const addon of addons.filter((item) => item.bundleId === drink.bundleId)) {
-        lines.push(`  + ${addon.qty}× ${addon.name} — ${formatCurrency(addon.price * addon.qty)}`);
+        lines.push(formatAddonLine(addon));
       }
       continue;
     }
@@ -246,7 +251,7 @@ function sessionSummary(items: OrderLineItem[]) {
     const linked = addons.filter((item) => item.forDrink === drink.name && !item.bundleId);
     lines.push(`• ${drink.qty}× ${drink.name} — ${formatCurrency(drink.price * drink.qty)}`);
     for (const addon of linked) {
-      lines.push(`  + ${addon.qty}× ${addon.name} — ${formatCurrency(addon.price * addon.qty)}`);
+      lines.push(formatAddonLine(addon));
     }
   }
 

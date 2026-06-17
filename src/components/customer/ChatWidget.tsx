@@ -176,10 +176,15 @@ export function ChatWidget({
               return null;
             }
 
+            const preserveWhitespace =
+              msg.role !== "user" && msg.role !== "status" && msg.role !== "confirm";
+
             return (
               <p
                 key={msg.id}
-                className={`mb-2 max-w-[88%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                className={`mb-2 max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                  preserveWhitespace ? "whitespace-pre-wrap" : "whitespace-pre-line"
+                } ${
                   msg.role === "user"
                     ? "ml-auto rounded-br-sm bg-terracotta text-white"
                     : msg.role === "status"
