@@ -6,6 +6,7 @@ import {
   getTrackedOrderIds,
   hasChatStatusShown,
   markChatStatusShown,
+  setPendingReviewOrder,
   shouldNotifyCustomerStatus,
   showCustomerBrowserNotification,
 } from "../lib/customerNotify";
@@ -44,6 +45,9 @@ export function useCustomerOrderUpdates(onStatusMessage?: (order: Order, message
       if (!message) continue;
 
       markChatStatusShown(order.id, order.status);
+      if (order.status === "completed") {
+        setPendingReviewOrder(order.id);
+      }
       onStatusMessageRef.current?.(order, message);
       showCustomerBrowserNotification(order);
     }

@@ -62,7 +62,7 @@ export interface Menu {
 
 export interface ChatMessage {
   id: string;
-  role: "bot" | "user" | "confirm" | "payment" | "status";
+  role: "bot" | "user" | "confirm" | "payment" | "status" | "review";
   text: string;
   orderId?: string;
 }
@@ -71,4 +71,13 @@ export interface ChatSession {
   items: OrderLineItem[];
   awaitingConfirm: boolean;
   awaitingName: boolean;
+}
+
+export interface OrderReview {
+  id: string;
+  customerName: string;
+  rating: number;
+  comment: string;
+  orderId?: string;
+  createdAt: string;
 }

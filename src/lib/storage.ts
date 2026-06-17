@@ -1,4 +1,4 @@
-import type { Menu, MenuItem, Order, OrderLineItem, PaymentSettings, NotificationSettings } from "../types";
+import type { Menu, MenuItem, Order, OrderLineItem, OrderReview, PaymentSettings, NotificationSettings } from "../types";
 import { notifyOwnerOnNewOrder } from "./notify";
 import { notifyCustomerOnStatusChange } from "./customerNotify";
 import { isSupabaseConfigured } from "./supabase";
@@ -9,9 +9,11 @@ const MENU_KEY = "spazio_menu";
 const STORE_OPEN_KEY = "spazio_store_open";
 const PAYMENT_KEY = "spazio_payment";
 const NOTIFICATION_KEY = "spazio_notifications";
+const REVIEWS_KEY = "spazio_reviews";
 
 export const MENU_UPDATED = "spazio-menu-update";
 export const ORDERS_UPDATED = "spazio-orders-update";
+export const REVIEWS_UPDATED = "spazio-reviews-update";
 export const STORE_STATUS_UPDATED = "spazio-store-status-update";
 export const PAYMENT_SETTINGS_UPDATED = "spazio-payment-settings-update";
 export const NOTIFICATION_SETTINGS_UPDATED = "spazio-notification-settings-update";
@@ -21,6 +23,7 @@ let menuCache: Menu | null = null;
 let storeOpenCache: boolean | null = null;
 let paymentCache: PaymentSettings | null = null;
 let notificationCache: NotificationSettings | null = null;
+let reviewsCache: OrderReview[] | null = null;
 let bootstrapDone = false;
 
 function uid() {
@@ -83,6 +86,10 @@ function emitOrdersUpdate() {
   window.dispatchEvent(new Event(ORDERS_UPDATED));
 }
 
+function emitReviewsUpdate() {
+  window.dispatchEvent(new Event(REVIEWS_UPDATED));
+}
+
 function emitStoreStatusUpdate() {
   window.dispatchEvent(new Event(STORE_STATUS_UPDATED));
 }
@@ -108,6 +115,7 @@ export async function bootstrapStorage(): Promise<void> {
     initMenu();
     initPaymentSettings();
     initNotificationSettings();
+    initReviews();
     seedSampleOrders();
     bootstrapDone = true;
     return;
@@ -119,7 +127,13 @@ export async function bootstrapStorage(): Promise<void> {
     paymentCache = db.paymentFromConfig(config);
     notificationCache = db.notificationFromConfig(config);
     ordersCache = await db.fetchOrders();
+    reviewsCache = await db.fetchReviews();
     setMenuCache(await db.fetchMenu());
+
+    if (reviewsCache.length === 0) {
+      await seedSampleReviewsDb();
+      reviewsCache = await db.fetchReviews();
+    }
 
     if (ordersCache.length === 0) {
       await seedSampleOrdersDb();
@@ -144,6 +158,12 @@ export async function bootstrapStorage(): Promise<void> {
           emitStoreStatusUpdate();
           emitPaymentSettingsUpdate();
           emitNotificationSettingsUpdate();
+        });
+      },
+      onReviews: () => {
+        void db.fetchReviews().then((reviews) => {
+          reviewsCache = reviews;
+          emitReviewsUpdate();
         });
       },
     });
@@ -694,4 +714,113 @@ export async function resetOrders() {
   }
   localStorage.removeItem(ORDERS_KEY);
   seedSampleOrders();
+}
+
+function saveReviewsLocal(reviews: OrderReview[]) {
+  reviewsCache = reviews;
+  localStorage.setItem(REVIEWS_KEY, JSON.stringify(reviews));
+  emitReviewsUpdate();
+}
+
+export function getReviews(): OrderReview[] {
+  if (isSupabaseConfigured) {
+    return reviewsCache ?? [];
+  }
+  try {
+    const data = JSON.parse(localStorage.getItem(REVIEWS_KEY) || "[]") as OrderReview[];
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+export function initReviews() {
+  if (!localStorage.getItem(REVIEWS_KEY)) {
+    saveReviewsLocal(seedSampleReviewsLocal());
+  }
+}
+
+function seedSampleReviewsLocal(): OrderReview[] {
+  const now = Date.now();
+  return [
+    {
+      id: "r-1",
+      customerName: "Mika",
+      rating: 5,
+      comment: "Flat white was perfect and pickup was quick. Will order again!",
+      createdAt: new Date(now - 1000 * 60 * 60 * 26).toISOString(),
+    },
+    {
+      id: "r-2",
+      customerName: "James",
+      rating: 4,
+      comment: "Love the Spazio Signature. Chat ordering made it super easy.",
+      createdAt: new Date(now - 1000 * 60 * 60 * 72).toISOString(),
+    },
+  ];
+}
+
+async function seedSampleReviewsDb() {
+  for (const review of seedSampleReviewsLocal()) {
+    try {
+      await db.insertReview({
+        customerName: review.customerName,
+        rating: review.rating,
+        comment: review.comment,
+      });
+    } catch {
+      break;
+    }
+  }
+}
+
+export async function submitReview(input: {
+  customerName: string;
+  rating: number;
+  comment: string;
+  orderId?: string;
+}): Promise<OrderReview> {
+  const name = input.customerName.trim();
+  const comment = input.comment.trim();
+  const rating = Math.max(1, Math.min(5, Math.round(input.rating)));
+  if (!name) throw new Error("Please enter your name.");
+  if (!comment) throw new Error("Please write a short comment.");
+
+  if (input.orderId) {
+    const existing = getReviews().find((r) => r.orderId === input.orderId);
+    if (existing) throw new Error("You already reviewed this order.");
+  }
+
+  if (isSupabaseConfigured) {
+    const review = await db.insertReview({
+      customerName: name,
+      rating,
+      comment,
+      orderId: input.orderId,
+    });
+    reviewsCache = [review, ...(reviewsCache ?? getReviews())];
+    emitReviewsUpdate();
+    return review;
+  }
+
+  const review: OrderReview = {
+    id: uid(),
+    customerName: name,
+    rating,
+    comment,
+    orderId: input.orderId,
+    createdAt: new Date().toISOString(),
+  };
+  saveReviewsLocal([review, ...getReviews()]);
+  return review;
+}
+
+export async function deleteReview(id: string) {
+  if (isSupabaseConfigured) {
+    await db.deleteReviewDb(id);
+    reviewsCache = (reviewsCache ?? getReviews()).filter((r) => r.id !== id);
+    emitReviewsUpdate();
+    return;
+  }
+  saveReviewsLocal(getReviews().filter((r) => r.id !== id));
 }

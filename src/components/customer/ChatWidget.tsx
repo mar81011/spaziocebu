@@ -5,8 +5,10 @@ import { buildQuickReplies } from "../../lib/menuIcons";
 import { useOrders } from "../../hooks/useOrders";
 import { useCustomerOrderUpdates } from "../../hooks/useCustomerOrderUpdates";
 import { GcashPaymentCard } from "./GcashPaymentCard";
+import { MicIcon, SendIcon } from "./ChatInputIcons";
+import { ReviewPromptCard } from "./ReviewPromptCard";
 import {
-  getPendingChatStatusMessages,
+  getPendingChatStatusUpdates,
   requestCustomerNotificationPermission,
   trackCustomerOrder,
 } from "../../lib/customerNotify";
@@ -49,9 +51,14 @@ export function ChatWidget({
   ]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [speechSupported] = useState(
+    () => typeof window !== "undefined" && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
+  );
   const [session, setSession] = useState(emptySession());
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const onOpenChangeRef = useRef(onOpenChange);
@@ -65,15 +72,23 @@ export function ChatWidget({
   }, []);
 
   useCustomerOrderUpdates(
-    useCallback((_order: Order, message: string) => {
+    useCallback((order: Order, message: string) => {
       pushMessage("status", message);
+      if (order.status === "completed") {
+        pushMessage("review", "", order.id);
+      }
       onOpenChangeRef.current(true);
     }, [pushMessage])
   );
 
   useEffect(() => {
-    const pending = getPendingChatStatusMessages(orders);
-    pending.forEach((message) => pushMessage("status", message));
+    const pending = getPendingChatStatusUpdates(orders);
+    pending.forEach(({ order, message }) => {
+      pushMessage("status", message);
+      if (order.status === "completed") {
+        pushMessage("review", "", order.id);
+      }
+    });
   }, [orders, pushMessage]);
 
   useEffect(() => {
@@ -131,7 +146,44 @@ export function ChatWidget({
   }, [open, queuedMessage, isStoreOpen]);
 
   const hasUserMessages = messages.some((m) => m.role === "user");
+  const hasInput = input.trim().length > 0;
   const quickReplies = useMemo(() => buildQuickReplies(menu), [menu]);
+
+  const toggleListening = useCallback(() => {
+    if (!speechSupported || !isStoreOpen || thinking) return;
+
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) return;
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = "en-PH";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript?.trim();
+      if (transcript) {
+        setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        inputRef.current?.focus();
+      }
+    };
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setListening(true);
+  }, [speechSupported, isStoreOpen, thinking, listening]);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, []);
 
   return (
     <>
@@ -170,6 +222,16 @@ export function ChatWidget({
               const order = orders.find((o) => o.id === msg.orderId);
               if (!order || order.status !== "awaiting_payment") return null;
               return <GcashPaymentCard key={msg.id} order={order} />;
+            }
+
+            if (msg.role === "review" && msg.orderId) {
+              return (
+                <ReviewPromptCard
+                  key={msg.id}
+                  orderId={msg.orderId}
+                  onNavigate={() => onOpenChange(false)}
+                />
+              );
             }
 
             if (msg.role === "bot" && isStalePaymentMessage(msg.text, orders)) {
@@ -243,16 +305,32 @@ export function ChatWidget({
             onChange={(e) => setInput(e.target.value)}
             placeholder={isStoreOpen ? "Message Spazio…" : "Closed for orders"}
             disabled={!isStoreOpen || thinking}
-            className="flex-1 rounded-full border border-espresso/12 px-4 py-2.5 text-sm outline-none focus:border-terracotta disabled:cursor-not-allowed disabled:bg-cream/50 disabled:text-warm-gray"
+            className="min-w-0 flex-1 rounded-full border border-espresso/12 px-4 py-2.5 text-sm outline-none focus:border-terracotta disabled:cursor-not-allowed disabled:bg-cream/50 disabled:text-warm-gray"
           />
-          <button
-            type="submit"
-            disabled={!isStoreOpen || thinking}
-            className="rounded-full bg-espresso px-4 text-white disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="Send"
-          >
-            →
-          </button>
+          {speechSupported && !hasInput ? (
+            <button
+              type="button"
+              onClick={toggleListening}
+              disabled={!isStoreOpen || thinking}
+              aria-label={listening ? "Stop listening" : "Voice input"}
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                listening
+                  ? "bg-[#e41e3f] text-white shadow-[0_0_0_4px_rgba(228,30,63,0.2)]"
+                  : "text-warm-gray hover:bg-espresso/5 hover:text-espresso"
+              }`}
+            >
+              <MicIcon />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!isStoreOpen || thinking || !hasInput}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0084ff] text-white transition hover:bg-[#0073e6] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Send"
+            >
+              <SendIcon />
+            </button>
+          )}
         </form>
       </div>
 

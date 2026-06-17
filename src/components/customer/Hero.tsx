@@ -18,7 +18,7 @@ export function Hero({ onOrderClick, isStoreOpen }: HeroProps) {
           <em className="text-terracotta not-italic">Zero hassle.</em>
         </h1>
         <p className="mx-auto mt-6 max-w-lg text-lg font-light text-warm-gray">
-          Browse the menu, tap to order, and chat with us to confirm — no app, no cart, no account.
+          Chat with us to order — add, change, or remove items. No app, no cart, no account.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-6">
           <button

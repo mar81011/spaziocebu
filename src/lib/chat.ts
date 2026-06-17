@@ -307,6 +307,73 @@ function resolveAiCart(existing: OrderLineItem[], fromAi: OrderLineItem[]): Orde
   return finalizeCart(mergeCartItems(existing, fromAi));
 }
 
+function isClearOrderRequest(text: string) {
+  return /\b(clear|cancel)\s+(?:my\s+)?order\b|\bstart over\b|\breset\s+(?:my\s+)?order\b/i.test(
+    text.toLowerCase()
+  );
+}
+
+function isRemoveRequest(text: string) {
+  const lower = text.toLowerCase();
+  if (isClearOrderRequest(lower)) return false;
+  return /\b(remove|delete|take off|drop|without|no more)\b/i.test(lower) || /\bcancel\b/.test(lower);
+}
+
+function removeFromCart(cart: OrderLineItem[], text: string, menu: Menu): OrderLineItem[] {
+  const lower = text.toLowerCase();
+  const removeAll = /\ball\b|\bboth\b|\bevery\b/i.test(lower);
+  const targets = parseItemsFromText(text, menu);
+  if (!targets.length) return cart;
+
+  let result = cart.map((item) => ({ ...item }));
+
+  for (const target of targets) {
+    if (isAddonLineName(target.name, menu)) {
+      result = result.filter((item) => item.name !== target.name || !item.forDrink);
+      continue;
+    }
+
+    if (removeAll) {
+      const bundleIds = new Set(
+        result.filter((item) => !item.forDrink && item.name === target.name && item.bundleId).map((i) => i.bundleId!)
+      );
+      result = result.filter(
+        (item) =>
+          item.name !== target.name &&
+          item.forDrink !== target.name &&
+          (!item.bundleId || !bundleIds.has(item.bundleId))
+      );
+      continue;
+    }
+
+    const plainIdx = result.findIndex(
+      (item) => !item.forDrink && !item.bundleId && item.name === target.name
+    );
+    if (plainIdx >= 0) {
+      if (result[plainIdx].qty > 1) result[plainIdx].qty -= 1;
+      else result.splice(plainIdx, 1);
+      continue;
+    }
+
+    const bundleIdx = result.findIndex(
+      (item) => !item.forDrink && item.bundleId && item.name === target.name
+    );
+    if (bundleIdx >= 0) {
+      const bundleId = result[bundleIdx].bundleId;
+      result = result.filter((item) => item.bundleId !== bundleId);
+    }
+  }
+
+  return finalizeCart(result);
+}
+
+function applyCartChangeReply(items: OrderLineItem[], intro: string) {
+  if (!items.length) {
+    return "Removed. Your cart is empty — tell me what you'd like.";
+  }
+  return `${formatOrderBlock(items, intro)}\n\nReply confirm to place your order, or tell me what else to add.`;
+}
+
 function isMenuRequest(text: string) {
   return /\b(menu|what do you (have|sell|offer)|what(?:'s| is) (?:on |available)|show (?:me )?(?:the )?menu|see (?:the )?menu)\b/i.test(
     text.toLowerCase()
@@ -516,6 +583,31 @@ export async function processUserMessage(
       type: "reply",
       session: next,
       text: `${formatOrderBlock(next.items, "Your order:")}\n\nWhat's your name for the order?`,
+    };
+  }
+
+  if (isClearOrderRequest(lower)) {
+    return {
+      type: "reply",
+      session: { ...next, items: [], awaitingConfirm: false },
+      text: "Order cleared. What would you like instead?",
+    };
+  }
+
+  if (isRemoveRequest(lower) && next.items.length > 0) {
+    const updated = removeFromCart(next.items, userText, menu);
+    const changed = JSON.stringify(updated) !== JSON.stringify(next.items);
+    if (!changed) {
+      return {
+        type: "reply",
+        session: next,
+        text: 'I couldn\'t find that in your order. Try "remove flat white" or "cancel the extra shot".',
+      };
+    }
+    return {
+      type: "reply",
+      session: { ...next, items: updated, awaitingConfirm: updated.length > 0 },
+      text: applyCartChangeReply(updated, "Updated your order:"),
     };
   }
 

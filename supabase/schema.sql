@@ -57,11 +57,25 @@ create table if not exists public.orders (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.order_reviews (
+  id bigint generated always as identity primary key,
+  customer_name text not null,
+  rating int not null check (rating between 1 and 5),
+  comment text not null default '',
+  order_id bigint references public.orders (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists order_reviews_order_id_unique
+  on public.order_reviews (order_id)
+  where order_id is not null;
+
 -- ---------------------------------------------------------------------------
 -- Realtime (orders + menu updates sync across tabs/devices)
 -- ---------------------------------------------------------------------------
 
 alter publication supabase_realtime add table public.orders;
+alter publication supabase_realtime add table public.order_reviews;
 alter publication supabase_realtime add table public.menu_categories;
 alter publication supabase_realtime add table public.menu_items;
 alter publication supabase_realtime add table public.store_config;
@@ -74,6 +88,7 @@ alter table public.store_config enable row level security;
 alter table public.menu_categories enable row level security;
 alter table public.menu_items enable row level security;
 alter table public.orders enable row level security;
+alter table public.order_reviews enable row level security;
 alter table public.admin_users enable row level security;
 
 create policy "store_config_anon_all"
@@ -90,6 +105,10 @@ create policy "menu_items_anon_all"
 
 create policy "orders_anon_all"
   on public.orders for all to anon, authenticated
+  using (true) with check (true);
+
+create policy "order_reviews_anon_all"
+  on public.order_reviews for all to anon, authenticated
   using (true) with check (true);
 
 -- ---------------------------------------------------------------------------

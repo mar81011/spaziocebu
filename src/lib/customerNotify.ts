@@ -61,7 +61,7 @@ export function buildCustomerStatusMessage(order: Order): string | null {
     case "ready":
       return `Order #${order.id} is ready for pickup!`;
     case "completed":
-      return `Thanks ${order.customerName}! Order #${order.id} is complete. See you next time.`;
+      return `Thanks ${order.customerName}! Order #${order.id} is complete.`;
     default:
       return null;
   }
@@ -94,8 +94,39 @@ export async function notifyCustomerOnStatusChange(order: Order): Promise<void> 
   await sendCustomerNtfy(order.id, `Spazio · Order #${order.id}`, message);
 }
 
-export function getPendingChatStatusMessages(orders: Order[]): string[] {
-  const messages: string[] = [];
+const PENDING_REVIEW_KEY = "spazio_pending_review_order";
+
+export function setPendingReviewOrder(orderId: string) {
+  try {
+    sessionStorage.setItem(PENDING_REVIEW_KEY, orderId);
+  } catch {
+    /* empty */
+  }
+}
+
+export function getPendingReviewOrder(): string | null {
+  try {
+    return sessionStorage.getItem(PENDING_REVIEW_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingReviewOrder() {
+  try {
+    sessionStorage.removeItem(PENDING_REVIEW_KEY);
+  } catch {
+    /* empty */
+  }
+}
+
+export interface CustomerStatusUpdate {
+  order: Order;
+  message: string;
+}
+
+export function getPendingChatStatusUpdates(orders: Order[]): CustomerStatusUpdate[] {
+  const updates: CustomerStatusUpdate[] = [];
 
   for (const orderId of getTrackedOrderIds()) {
     const order = orders.find((o) => o.id === orderId);
@@ -106,10 +137,38 @@ export function getPendingChatStatusMessages(orders: Order[]): string[] {
     if (!message) continue;
 
     markStatus(CHAT_SHOWN_KEY, order.id, order.status);
-    messages.push(message);
+    if (order.status === "completed") {
+      setPendingReviewOrder(order.id);
+    }
+    updates.push({ order, message });
   }
 
-  return messages;
+  return updates;
+}
+
+const REVIEW_DRAFT_RATING_KEY = "spazio_review_draft_rating";
+
+export function setReviewDraftRating(rating: number) {
+  try {
+    sessionStorage.setItem(REVIEW_DRAFT_RATING_KEY, String(rating));
+  } catch {
+    /* empty */
+  }
+}
+
+export function consumeReviewDraftRating(): number | null {
+  try {
+    const value = sessionStorage.getItem(REVIEW_DRAFT_RATING_KEY);
+    sessionStorage.removeItem(REVIEW_DRAFT_RATING_KEY);
+    const rating = value ? Number(value) : NaN;
+    return rating >= 1 && rating <= 5 ? rating : null;
+  } catch {
+    return null;
+  }
+}
+
+export function scrollToReviewsSection() {
+  document.getElementById("reviews")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 export function markChatStatusShown(orderId: string, status: OrderStatus) {

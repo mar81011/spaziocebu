@@ -21,6 +21,7 @@ export function Header({ onOrderClick, isStoreOpen }: HeaderProps) {
             {[
               { href: "#menu", label: "Menu" },
               { href: "#how", label: "How it works" },
+              { href: "#reviews", label: "Reviews" },
             ].map((link) => (
               <li key={link.href}>
                 <a

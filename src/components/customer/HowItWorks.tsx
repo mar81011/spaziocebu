@@ -2,7 +2,7 @@ const steps = [
   {
     num: "01",
     title: "Pick your drinks",
-    text: "Browse the menu below and tap what you want — or open chat and tell us your order.",
+    text: "Open chat and tell us your order — add, change, or remove items anytime.",
   },
   {
     num: "02",

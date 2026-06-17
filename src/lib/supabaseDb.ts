@@ -4,6 +4,7 @@ import type {
   NotificationSettings,
   Order,
   OrderLineItem,
+  OrderReview,
   PaymentSettings,
 } from "../types";
 import { supabase } from "./supabase";
@@ -30,6 +31,15 @@ type OrderRow = {
   total: number;
   status: Order["status"];
   notes: string;
+  created_at: string;
+};
+
+type ReviewRow = {
+  id: number;
+  customer_name: string;
+  rating: number;
+  comment: string;
+  order_id: number | null;
   created_at: string;
 };
 
@@ -86,6 +96,54 @@ export async function fetchStoreConfig(): Promise<StoreConfigRow> {
   const { data, error } = await client.from("store_config").select("*").eq("id", 1).single();
   if (error) throw error;
   return data as StoreConfigRow;
+}
+
+function rowToReview(row: ReviewRow): OrderReview {
+  return {
+    id: String(row.id),
+    customerName: row.customer_name,
+    rating: row.rating,
+    comment: row.comment,
+    orderId: row.order_id != null ? String(row.order_id) : undefined,
+    createdAt: row.created_at,
+  };
+}
+
+export async function fetchReviews(): Promise<OrderReview[]> {
+  const client = assertClient();
+  const { data, error } = await client
+    .from("order_reviews")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data as ReviewRow[]).map(rowToReview);
+}
+
+export async function insertReview(review: {
+  customerName: string;
+  rating: number;
+  comment: string;
+  orderId?: string;
+}): Promise<OrderReview> {
+  const client = assertClient();
+  const { data, error } = await client
+    .from("order_reviews")
+    .insert({
+      customer_name: review.customerName.trim(),
+      rating: review.rating,
+      comment: review.comment.trim(),
+      order_id: review.orderId ? Number(review.orderId) : null,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return rowToReview(data as ReviewRow);
+}
+
+export async function deleteReviewDb(id: string): Promise<void> {
+  const client = assertClient();
+  const { error } = await client.from("order_reviews").delete().eq("id", Number(id));
+  if (error) throw error;
 }
 
 export async function fetchOrders(): Promise<Order[]> {
@@ -317,6 +375,7 @@ export function subscribeToDbChanges(handlers: {
   onOrders?: () => void;
   onMenu?: () => void;
   onConfig?: () => void;
+  onReviews?: () => void;
 }) {
   const client = assertClient();
   const channel = client
@@ -332,6 +391,9 @@ export function subscribeToDbChanges(handlers: {
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "store_config" }, () => {
       handlers.onConfig?.();
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "order_reviews" }, () => {
+      handlers.onReviews?.();
     })
     .subscribe();
 

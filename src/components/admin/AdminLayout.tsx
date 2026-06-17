@@ -7,6 +7,7 @@ const links = [
   { to: "/admin", label: "Orders", end: true },
   { to: "/admin/menu", label: "Menu" },
   { to: "/admin/transactions", label: "Transactions" },
+  { to: "/admin/reviews", label: "Reviews" },
   { to: "/admin/settings", label: "Settings" },
 ];
 

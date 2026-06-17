@@ -7,6 +7,7 @@ import { Header } from "../components/customer/Header";
 import { Hero } from "../components/customer/Hero";
 import { HowItWorks } from "../components/customer/HowItWorks";
 import { MenuSection } from "../components/customer/MenuSection";
+import { ReviewsSection } from "../components/customer/ReviewsSection";
 import { useMenu } from "../hooks/useMenu";
 import { useStoreStatus } from "../hooks/useStoreStatus";
 
@@ -31,10 +32,10 @@ export function HomePage() {
         <HowItWorks />
         <MenuSection
           menu={menu}
-          onItemClick={(name) => openChat(`I'd like a ${name}`)}
           onOrderClick={() => openChat()}
           isStoreOpen={isStoreOpen}
         />
+        <ReviewsSection />
         <BrandStrip />
         <Footer />
       </main>
