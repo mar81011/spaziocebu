@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", system-ui, sans-serif;
+  --font-serif: "Cormorant Garamond", Georgia, serif;
+  --color-cream: #f6f1ea;
+  --color-cream-deep: #ebe3d6;
+  --color-espresso: #1a120e;
+  --color-terracotta: #b85c38;
+  --color-sage: #7a8b6e;
+  --color-warm-gray: #6f6258;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-cream font-sans text-espresso antialiased;
+}

@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spazio — Order Coffee by Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --cream: #f6f1ea;
+      --cream-deep: #ebe3d6;
+      --espresso: #1a120e;
+      --terracotta: #b85c38;
+      --terracotta-light: #d4845f;
+      --sage: #7a8b6e;
+      --warm-gray: #6f6258;
+      --white: #ffffff;
+      --shadow: 0 24px 60px rgba(26, 18, 14, 0.12);
+      --shadow-soft: 0 8px 30px rgba(26, 18, 14, 0.08);
+      --radius-lg: 28px;
+      --radius-md: 18px;
+      --max: 1180px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: "Outfit", system-ui, sans-serif;
+      background: var(--cream);
+      color: var(--espresso);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.35;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+      z-index: 9999;
+    }
+
+    .container {
+      width: min(100% - 3rem, var(--max));
+      margin-inline: auto;
+    }
+
+    /* Header */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--white);
+      border-bottom: 1px solid rgba(26, 18, 14, 0.08);
+    }
+
+    .header-inner {
+      width: min(100% - 3rem, var(--max));
+      margin-inline: auto;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 1.15rem 0;
+      gap: 1.5rem;
+    }
+
+    .logo-wrap {
+      justify-self: start;
+      text-decoration: none;
+      color: var(--espresso);
+    }
+
+    .logo {
+      font-family: "Cormorant Garamond", Georgia, serif;
+      font-size: 1.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      line-height: 1;
+      display: block;
+    }
+
+    .logo-tagline {
+      display: block;
+      font-family: "Outfit", sans-serif;
+      font-size: 0.62rem;
+      font-weight: 500;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: var(--warm-gray);
+      margin-top: 0.35rem;
+    }
+
+    .nav {
+      display: flex;
+      gap: 2.5rem;
+      list-style: none;
+      justify-self: center;
+    }
+
+    .nav a {
+      position: relative;
+      text-decoration: none;
+      color: var(--espresso);
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      padding-bottom: 4px;
+    }
+
+    .nav a::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 100%;
+      height: 1px;
+      background: var(--terracotta);
+      transform: scaleX(0);
+      transform-origin: right;
+      transition: transform 0.25s ease;
+    }
+
+    .nav a:hover::after {
+      transform: scaleX(1);
+      transform-origin: left;
+    }
+
+    .header-actions {
+      justify-self: end;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn-nav {
+      background: var(--espresso);
+      color: var(--white);
+      padding: 0.7rem 1.25rem;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      box-shadow: none;
+    }
+
+    .btn-nav:hover {
+      background: #2d221c;
+      box-shadow: none;
+    }
+
+    .btn-icon {
+      display: none;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 1px solid rgba(26, 18, 14, 0.12);
+      background: var(--cream);
+      color: var(--espresso);
+      font-size: 1.1rem;
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 500;
+      font-size: 0.9rem;
+      border-radius: 999px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--terracotta), #a04e2f);
+      color: var(--white);
+      padding: 0.8rem 1.35rem;
+      box-shadow: 0 10px 28px rgba(184, 92, 56, 0.35);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--espresso);
+      padding: 0.5rem 0;
+      border-bottom: 1px solid transparent;
+      border-radius: 0;
+    }
+
+    .btn-ghost:hover { border-bottom-color: var(--espresso); transform: none; }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--terracotta);
+      margin-bottom: 1.25rem;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 32px;
+      height: 1px;
+      background: var(--terracotta);
+    }
+
+    /* Hero */
+    .hero {
+      padding: 4.5rem 0 4rem;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3rem;
+      align-items: center;
+    }
+
+    .hero h1 {
+      font-family: "Cormorant Garamond", Georgia, serif;
+      font-size: clamp(2.75rem, 5.5vw, 4.75rem);
+      font-weight: 500;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      margin-bottom: 1.25rem;
+    }
+
+    .hero h1 em {
+      font-style: italic;
+      color: var(--terracotta);
+    }
+
+    .hero-lead {
+      font-size: 1.1rem;
+      color: var(--warm-gray);
+      max-width: 36ch;
+      margin-bottom: 2rem;
+      font-weight: 300;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    /* Chat preview in hero */
+    .chat-preview {
+      background: var(--white);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      border: 1px solid rgba(26, 18, 14, 0.06);
+    }
+
+    .chat-preview-header {
+      background: var(--espresso);
+      color: var(--white);
+      padding: 1.1rem 1.35rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chat-preview-header h2 {
+      font-family: "Cormorant Garamond", serif;
+      font-size: 1.2rem;
+      font-weight: 500;
+    }
+
+    .chat-preview-header span {
+      font-size: 0.72rem;
+      opacity: 0.65;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #6dd47e;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    .chat-preview-body {
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.7rem;
+      min-height: 320px;
+      background: linear-gradient(180deg, #faf7f2 0%, var(--white) 100%);
+    }
+
+    .msg {
+      max-width: 88%;
+      padding: 0.7rem 0.95rem;
+      border-radius: 16px;
+      font-size: 0.86rem;
+      line-height: 1.5;
+      animation: fadeIn 0.4s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .msg.bot {
+      background: var(--cream);
+      color: var(--espresso);
+      border-bottom-left-radius: 4px;
+    }
+
+    .msg.user {
+      background: var(--terracotta);
+      color: white;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg.confirm {
+      background: var(--espresso);
+      color: white;
+      align-self: center;
+      text-align: center;
+      font-size: 0.8rem;
+      padding: 0.6rem 1rem;
+      border-radius: 999px;
+    }
+
+    .chat-preview-input {
+      display: flex;
+      gap: 0.5rem;
+      padding: 1rem 1.25rem;
+      border-top: 1px solid rgba(26, 18, 14, 0.08);
+      background: var(--white);
+    }
+
+    .chat-preview-input input {
+      flex: 1;
+      border: 1px solid rgba(26, 18, 14, 0.12);
+      border-radius: 999px;
+      padding: 0.65rem 1rem;
+      font-family: inherit;
+      font-size: 0.86rem;
+      outline: none;
+    }
+
+    .chat-preview-input button {
+      background: var(--espresso);
+      color: white;
+      border: none;
+      border-radius: 999px;
+      padding: 0 1rem;
+      cursor: pointer;
+    }
+
+    /* How it works */
+    .steps {
+      padding: 4rem 0;
+      border-top: 1px solid rgba(26, 18, 14, 0.08);
+    }
+
+    .steps h2 {
+      font-family: "Cormorant Garamond", serif;
+      font-size: clamp(2rem, 3.5vw, 2.75rem);
+      font-weight: 500;
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+
+    .step {
+      background: var(--white);
+      border-radius: var(--radius-md);
+      padding: 2rem 1.75rem;
+      box-shadow: var(--shadow-soft);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+    }
+
+    .step-num {
+      font-family: "Cormorant Garamond", serif;
+      font-size: 2.5rem;
+      font-weight: 600;
+      color: var(--terracotta);
+      opacity: 0.35;
+      line-height: 1;
+      margin-bottom: 0.75rem;
+    }
+
+    .step h3 {
+      font-size: 1.05rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+    }
+
+    .step p {
+      font-size: 0.9rem;
+      color: var(--warm-gray);
+      font-weight: 300;
+    }
+
+    /* Menu */
+    .section {
+      padding: 5rem 0;
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .section-header h2 {
+      font-family: "Cormorant Garamond", serif;
+      font-size: clamp(2.25rem, 4vw, 3rem);
+      font-weight: 500;
+      margin-bottom: 0.75rem;
+    }
+
+    .section-header p {
+      color: var(--warm-gray);
+      font-weight: 300;
+      max-width: 48ch;
+      margin-inline: auto;
+    }
+
+    .menu-list {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+      max-width: 720px;
+      margin-inline: auto;
+    }
+
+    .menu-categories {
+      max-width: 720px;
+      margin-inline: auto;
+    }
+
+    .menu-category {
+      margin-bottom: 2.5rem;
+    }
+
+    .menu-category-title {
+      font-family: "Cormorant Garamond", serif;
+      font-size: 1.5rem;
+      font-weight: 500;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid rgba(26, 18, 14, 0.1);
+      color: var(--espresso);
+    }
+
+    .menu-category .menu-list {
+      margin-inline: 0;
+      max-width: none;
+    }
+
+    .menu-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      background: var(--white);
+      padding: 1.25rem 1.5rem;
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-soft);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      transition: transform 0.2s, box-shadow 0.2s;
+      cursor: pointer;
+    }
+
+    .menu-item:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow);
+    }
+
+    .menu-item-info { flex: 1; width: 100%; }
+
+    .menu-item-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .menu-item h3 {
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    .menu-item .price {
+      color: var(--terracotta);
+      font-weight: 600;
+      font-size: 0.95rem;
+      white-space: nowrap;
+    }
+
+    .menu-item p {
+      font-size: 0.82rem;
+      color: var(--warm-gray);
+      font-weight: 300;
+    }
+
+    .menu-cta {
+      text-align: center;
+      margin-top: 2rem;
+    }
+
+    /* Brand strip — no physical store */
+    .brand-strip {
+      background: var(--cream-deep);
+      border-radius: var(--radius-lg);
+      padding: 3rem;
+      text-align: center;
+      margin-bottom: 4rem;
+    }
+
+    .brand-strip h2 {
+      font-family: "Cormorant Garamond", serif;
+      font-size: clamp(1.75rem, 3vw, 2.25rem);
+      font-weight: 500;
+      margin-bottom: 0.75rem;
+    }
+
+    .brand-strip p {
+      color: var(--warm-gray);
+      font-weight: 300;
+      max-width: 50ch;
+      margin-inline: auto;
+      font-size: 0.95rem;
+    }
+
+    /* Footer */
+    .footer {
+      padding: 2rem 0 5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--warm-gray);
+      font-size: 0.85rem;
+      border-top: 1px solid rgba(26, 18, 14, 0.08);
+    }
+
+    .footer .logo { font-size: 1.35rem; }
+
+    /* Floating chat (mobile-style FAB) */
+    .chat-fab {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      z-index: 200;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--terracotta), #a04e2f);
+      color: white;
+      font-size: 1.35rem;
+      box-shadow: 0 16px 40px rgba(184, 92, 56, 0.45);
+      transition: transform 0.2s;
+    }
+
+    .chat-fab:hover { transform: scale(1.06); }
+
+    .chat-panel {
+      position: fixed;
+      bottom: 6.5rem;
+      right: 2rem;
+      z-index: 200;
+      width: min(380px, calc(100vw - 2rem));
+      background: var(--white);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: none;
+      border: 1px solid rgba(26, 18, 14, 0.06);
+    }
+
+    .chat-panel.open { display: block; animation: slideUp 0.3s ease; }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .chat-header {
+      background: var(--espresso);
+      color: var(--white);
+      padding: 1.15rem 1.35rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chat-header h3 {
+      font-family: "Cormorant Garamond", serif;
+      font-size: 1.2rem;
+      font-weight: 500;
+    }
+
+    .chat-header span { font-size: 0.72rem; opacity: 0.65; }
+
+    .chat-close {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 1.25rem;
+      cursor: pointer;
+      opacity: 0.7;
+    }
+
+    .chat-messages {
+      padding: 1.15rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      max-height: 300px;
+      overflow-y: auto;
+      background: linear-gradient(180deg, #faf7f2 0%, var(--white) 100%);
+    }
+
+    .chat-input {
+      display: flex;
+      gap: 0.5rem;
+      padding: 1rem;
+      border-top: 1px solid rgba(26, 18, 14, 0.08);
+    }
+
+    .chat-input input {
+      flex: 1;
+      border: 1px solid rgba(26, 18, 14, 0.12);
+      border-radius: 999px;
+      padding: 0.7rem 1rem;
+      font-family: inherit;
+      font-size: 0.88rem;
+      outline: none;
+    }
+
+    .chat-input input:focus { border-color: var(--terracotta); }
+
+    .chat-input button {
+      background: var(--espresso);
+      color: white;
+      border: none;
+      border-radius: 999px;
+      padding: 0 1.1rem;
+      cursor: pointer;
+    }
+
+    .quick-replies {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      padding: 0 1.15rem 0.75rem;
+    }
+
+    .quick-reply {
+      background: var(--cream);
+      border: 1px solid rgba(26, 18, 14, 0.1);
+      border-radius: 999px;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      font-family: inherit;
+      color: var(--espresso);
+      transition: background 0.2s;
+    }
+
+    .quick-reply:hover { background: var(--cream-deep); }
+
+    @media (max-width: 900px) {
+      .header-inner {
+        grid-template-columns: 1fr auto;
+      }
+
+      .nav { display: none; }
+
+      .header-actions .btn-nav { display: none; }
+
+      .btn-icon { display: inline-flex; }
+
+      .hero-grid, .steps-grid, .menu-list { grid-template-columns: 1fr; }
+      .hero { padding-top: 3rem; }
+      .brand-strip { padding: 2rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="#" class="logo-wrap">
+        <span class="logo">Spazio</span>
+        <span class="logo-tagline">Coffee by chat</span>
+      </a>
+      <nav>
+        <ul class="nav">
+          <li><a href="#menu">Menu</a></li>
+          <li><a href="#how">How it works</a></li>
+        </ul>
+      </nav>
+      <div class="header-actions">
+        <button class="btn btn-nav" onclick="openChat()">Order now</button>
+        <button class="btn-icon" onclick="openChat()" aria-label="Order via chat">💬</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero: value prop + live chat preview -->
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Specialty coffee, ordered by chat</p>
+          <h1>Great coffee.<br /><em>Zero hassle.</em></h1>
+          <p class="hero-lead">
+            Tell us what you want in plain English. No app download, no cart, no account — just chat and we'll handle the rest.
+          </p>
+          <div class="hero-actions">
+            <button class="btn btn-primary" onclick="openChat()">Start Ordering</button>
+            <a href="#how" class="btn btn-ghost">See how it works ↓</a>
+          </div>
+        </div>
+
+        <div class="chat-preview" aria-label="Chat ordering preview">
+          <div class="chat-preview-header">
+            <div>
+              <h2>Spazio</h2>
+              <span><span class="status-dot"></span>Online — ready to take your order</span>
+            </div>
+          </div>
+          <div class="chat-preview-body" id="heroChat">
+            <div class="msg bot">Hi! I'm Spazio. What can I get started for you today?</div>
+            <div class="msg user">Can I get a flat white and an almond croissant?</div>
+            <div class="msg bot">Of course — 1× Flat White (₱165) and 1× Almond Croissant (₱145). Total ₱310. What's your name?</div>
+            <div class="msg user">Alex</div>
+            <div class="msg bot">Thanks Alex! Your order is confirmed. We'll message you when it's ready. ☕</div>
+            <div class="msg confirm">Order #1042 · ₱310</div>
+          </div>
+          <div class="chat-preview-input">
+            <input type="text" placeholder="Try: 2 cappuccinos to go" readonly />
+            <button onclick="openChat()" aria-label="Open chat">→</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How ordering works -->
+    <section class="steps" id="how">
+      <div class="container">
+        <h2>How ordering works</h2>
+        <div class="steps-grid">
+          <article class="step">
+            <div class="step-num">01</div>
+            <h3>Open the chat</h3>
+            <p>Tap the chat button anywhere on the page. No sign-up required.</p>
+          </article>
+          <article class="step">
+            <div class="step-num">02</div>
+            <h3>Say what you want</h3>
+            <p>Order like you're texting a friend — "2 flat whites and a croissant" works perfectly.</p>
+          </article>
+          <article class="step">
+            <div class="step-num">03</div>
+            <h3>Confirm & done</h3>
+            <p>We summarise your order and total. Confirm once and you're all set.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Featured menu (text-only, no photos) -->
+    <section class="section" id="menu">
+      <div class="container">
+        <div class="section-header">
+          <p class="eyebrow" style="justify-content: center;">Menu highlights</p>
+          <h2>What we serve</h2>
+          <p>Tap any item to add it to your chat, or ask for the full menu inside the chat.</p>
+        </div>
+
+        <div class="menu-categories" id="menuContainer">
+          <!-- Rendered from admin menu -->
+        </div>
+
+        <div class="menu-cta">
+          <button class="btn btn-primary" onclick="openChat()">Order via Chat</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Brand only — no store -->
+    <section class="container">
+      <div class="brand-strip">
+        <h2>Spazio means space.</h2>
+        <p>We're building a coffee experience that feels calm and personal — starting with the simplest way to order: a conversation.</p>
+      </div>
+    </section>
+
+    <footer class="container footer">
+      <a href="#" class="logo">Spazio</a>
+      <p>© 2026 Spazio. Order via chat. · <a href="admin.html" style="color:var(--warm-gray)">Admin</a></p>
+    </footer>
+  </main>
+
+  <!-- Floating chat widget -->
+  <div class="chat-panel" id="chatPanel">
+    <div class="chat-header">
+      <div>
+        <h3>Spazio</h3>
+        <span><span class="status-dot"></span>Ready to take your order</span>
+      </div>
+      <button class="chat-close" onclick="closeChat()" aria-label="Close chat">×</button>
+    </div>
+    <div class="chat-messages" id="chatMessages">
+      <div class="msg bot">Hi! What would you like to order today?</div>
+    </div>
+    <div class="quick-replies">
+      <button class="quick-reply" onclick="sendQuick('Flat white please')">Flat white</button>
+      <button class="quick-reply" onclick="sendQuick('Show me the full menu')">Full menu</button>
+      <button class="quick-reply" onclick="sendQuick('2 cappuccinos')">2 cappuccinos</button>
+    </div>
+    <div class="chat-input">
+      <input type="text" id="chatInput" placeholder="Type your order…" onkeydown="if(event.key==='Enter')sendMessage()" />
+      <button onclick="sendMessage()" aria-label="Send">→</button>
+    </div>
+  </div>
+
+  <button class="chat-fab" onclick="toggleChat()" aria-label="Open chat">💬</button>
+
+  <script src="orders-store.js"></script>
+  <script>
+    const chatMessages = document.getElementById("chatMessages");
+    const chatInput = document.getElementById("chatInput");
+
+    let chatSession = { items: [], awaitingName: false, awaitingConfirm: false };
+
+    function renderCustomerMenu() {
+      const menu = getMenu();
+      const container = document.getElementById("menuContainer");
+
+      container.innerHTML = menu.categories.map((cat) => `
+        <section class="menu-category">
+          <h3 class="menu-category-title">${cat.title}</h3>
+          <div class="menu-list">
+            ${cat.items.map((item) => `
+              <article class="menu-item" onclick='addToChat(${JSON.stringify(item.name)})'>
+                <div class="menu-item-info">
+                  <div class="menu-item-top">
+                    <h3>${item.name}</h3>
+                    <span class="price">${formatCurrency(item.price)}</span>
+                  </div>
+                  <p>${item.description || ""}</p>
+                </div>
+              </article>
+            `).join("")}
+          </div>
+        </section>
+      `).join("");
+    }
+
+    function openChat() {
+      document.getElementById("chatPanel").classList.add("open");
+      chatInput.focus();
+    }
+
+    function closeChat() {
+      document.getElementById("chatPanel").classList.remove("open");
+    }
+
+    function toggleChat() {
+      document.getElementById("chatPanel").classList.toggle("open");
+      if (document.getElementById("chatPanel").classList.contains("open")) {
+        chatInput.focus();
+      }
+    }
+
+    function addMessage(text, type) {
+      const el = document.createElement("div");
+      el.className = `msg ${type}`;
+      el.textContent = text;
+      chatMessages.appendChild(el);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function sessionTotal() {
+      return chatSession.items.reduce((s, i) => s + i.price * i.qty, 0);
+    }
+
+    function sessionSummary() {
+      return chatSession.items.map((i) => `${i.qty}× ${i.name} (${formatCurrency(i.price * i.qty)})`).join(", ");
+    }
+
+    function botReply(userText) {
+      const lower = userText.toLowerCase().trim();
+
+      if (chatSession.awaitingName) {
+        const name = userText.replace(/^(i'm|i am|my name is)\s+/i, "").trim() || userText;
+        const order = addOrder({
+          customerName: name,
+          items: chatSession.items,
+          notes: "Via chat",
+        });
+        chatSession = { items: [], awaitingName: false, awaitingConfirm: false };
+        return `Thanks ${name}! Order #${order.id} confirmed — ${formatCurrency(order.total)}. We'll message you when it's ready. ☕`;
+      }
+
+      if (chatSession.awaitingConfirm && (lower === "confirm" || lower === "yes" || lower.includes("confirm"))) {
+        chatSession.awaitingConfirm = false;
+        chatSession.awaitingName = true;
+        return `Total: ${formatCurrency(sessionTotal())}. What's your name?`;
+      }
+
+      if (lower.includes("menu")) {
+        return `Here's our menu — ${formatMenuForChat()}. What would you like?`;
+      }
+
+      const parsed = parseItemsFromText(userText);
+      if (parsed.length > 0) {
+        chatSession.items = parsed;
+        chatSession.awaitingConfirm = true;
+        return `Got it — ${sessionSummary()}. Total ${formatCurrency(sessionTotal())}. Reply **confirm** to place your order.`;
+      }
+
+      if (chatSession.items.length > 0) {
+        return "Reply **confirm** to place your order, or tell me what else to add.";
+      }
+
+      return "Tell me what you'd like — e.g. \"flat white and a croissant\" — and I'll summarise your order.";
+    }
+
+    function sendMessage() {
+      const text = chatInput.value.trim();
+      if (!text) return;
+      addMessage(text, "user");
+      chatInput.value = "";
+      setTimeout(() => {
+        const reply = botReply(text);
+        addMessage(reply.replace(/\*\*/g, ""), "bot");
+        if (reply.includes("Order #")) {
+          const confirm = document.createElement("div");
+          confirm.className = "msg confirm";
+          confirm.textContent = reply.match(/Order #\d+/)?.[0] + " · saved";
+          chatMessages.appendChild(confirm);
+        }
+      }, 600);
+    }
+
+    function sendQuick(text) {
+      chatInput.value = text;
+      sendMessage();
+    }
+
+    function addToChat(itemName) {
+      openChat();
+      chatInput.value = `I'd like a ${itemName}`;
+      sendMessage();
+    }
+
+    renderCustomerMenu();
+    window.addEventListener("storage", renderCustomerMenu);
+  </script>
+</body>
+</html>
