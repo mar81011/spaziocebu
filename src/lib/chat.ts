@@ -319,6 +319,179 @@ function isRemoveRequest(text: string) {
   return /\b(remove|delete|take off|drop|without|no more)\b/i.test(lower) || /\bcancel\b/.test(lower);
 }
 
+function isChangeRequest(text: string) {
+  const lower = text.toLowerCase();
+  if (isClearOrderRequest(lower) || isRemoveRequest(lower)) return false;
+  return (
+    /\bchange(?:d)?\s+my\s+mind\b/i.test(lower) ||
+    /\bchange(?:d)?\s+(?:it|that|this|my\s+order)\s+to\b/i.test(lower) ||
+    /\bchange\s+to\b/i.test(lower) ||
+    /\bswitch(?:ed)?\s+(?:it\s+)?to\b/i.test(lower) ||
+    /\breplace(?:d)?\s+(?:it|that|this)\s+with\b/i.test(lower) ||
+    /\bmake\s+it\s+.+\s+instead\b/i.test(lower) ||
+    /\b(?:swap|switch)\s+.+\s+(?:for|with|to)\b/i.test(lower)
+  );
+}
+
+function inferDrinksToReplace(cart: OrderLineItem[]): string[] {
+  const sole = inferSoleDrinkInContext(cart, []);
+  if (sole) return [sole];
+
+  const drinks = cart.filter((item) => !item.forDrink);
+  if (drinks.length === 1) return [drinks[0].name];
+
+  return [];
+}
+
+function parseChangeRequest(
+  text: string,
+  menu: Menu,
+  cart: OrderLineItem[]
+): { removeDrinkNames: string[]; newItemsText: string } | null {
+  if (!isChangeRequest(text)) return null;
+
+  const drinkNames = collectDrinkNames(menu, cart);
+
+  const swapMatch = text.match(
+    /(?:swap|switch)\s+(?:the\s+)?(.+?)\s+(?:for|with|to)\s+(.+?)(?:\.|!|\?|$)/i
+  );
+  if (swapMatch) {
+    const removeDrinkNames = matchDrinksInText(swapMatch[1], drinkNames);
+    if (removeDrinkNames.length) {
+      return { removeDrinkNames, newItemsText: swapMatch[2].trim() };
+    }
+  }
+
+  const mindMatch = text.match(
+    /change(?:d)?\s+my\s+mind(?:,)?\s*(?:change\s+)?(?:it\s+)?to\s+(.+)/i
+  );
+  if (mindMatch) {
+    return {
+      removeDrinkNames: inferDrinksToReplace(cart),
+      newItemsText: mindMatch[1].trim(),
+    };
+  }
+
+  const simplePatterns = [
+    /change(?:d)?\s+(?:it|that|this|my\s+order)\s+to\s+(.+)/i,
+    /change\s+to\s+(.+)/i,
+    /switch(?:ed)?\s+(?:it\s+)?to\s+(.+)/i,
+    /replace(?:d)?\s+(?:it|that|this)\s+with\s+(.+)/i,
+    /make\s+it\s+(.+?)\s+instead/i,
+  ];
+  for (const pattern of simplePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      return {
+        removeDrinkNames: inferDrinksToReplace(cart),
+        newItemsText: match[1].trim(),
+      };
+    }
+  }
+
+  for (const name of [...drinkNames].sort((a, b) => b.length - a.length)) {
+    const pattern = new RegExp(
+      `change(?:d)?\\s+(?:the\\s+)?${escapeRegex(name)}\\s+to\\s+(.+)`,
+      "i"
+    );
+    const match = text.match(pattern);
+    if (match) {
+      return { removeDrinkNames: [name], newItemsText: match[1].trim() };
+    }
+  }
+
+  return null;
+}
+
+function removeOneDrinkFromCart(cart: OrderLineItem[], drinkName: string): OrderLineItem[] {
+  let result = cart.map((item) => ({ ...item }));
+
+  const plainIdx = result.findIndex(
+    (item) => !item.forDrink && !item.bundleId && item.name === drinkName
+  );
+  if (plainIdx >= 0) {
+    if (result[plainIdx].qty > 1) result[plainIdx].qty -= 1;
+    else result.splice(plainIdx, 1);
+  } else {
+    const bundleIdx = result.findIndex(
+      (item) => !item.forDrink && item.bundleId && item.name === drinkName
+    );
+    if (bundleIdx >= 0) {
+      const bundleId = result[bundleIdx].bundleId;
+      result = result.filter((item) => item.bundleId !== bundleId);
+    }
+  }
+
+  const stillHasDrink = result.some((item) => !item.forDrink && item.name === drinkName);
+  if (!stillHasDrink) {
+    result = result.filter((item) => item.forDrink !== drinkName);
+  }
+
+  return result;
+}
+
+function removeDrinkQtyFromCart(cart: OrderLineItem[], drinkName: string, qty: number): OrderLineItem[] {
+  let result = cart.map((item) => ({ ...item }));
+  for (let i = 0; i < qty; i++) {
+    const before = result.length;
+    result = removeOneDrinkFromCart(result, drinkName);
+    if (result.length === before && !result.some((item) => !item.forDrink && item.name === drinkName)) {
+      break;
+    }
+  }
+  return result;
+}
+
+function applyChangeRequest(
+  cart: OrderLineItem[],
+  text: string,
+  menu: Menu
+): OrderLineItem[] | null {
+  const parsed = parseChangeRequest(text, menu, cart);
+  if (!parsed) return null;
+
+  const newItems = parseItemsFromText(parsed.newItemsText, menu, cart);
+  if (!newItems.length) return null;
+
+  const removeNames = parsed.removeDrinkNames.filter(Boolean);
+  if (!removeNames.length) return null;
+
+  let result = cart.map((item) => ({ ...item }));
+  const soleDrink = inferSoleDrinkInContext(cart, []);
+
+  for (const drinkName of removeNames) {
+    const totalQty = result
+      .filter((item) => !item.forDrink && item.name === drinkName)
+      .reduce((sum, item) => sum + item.qty, 0);
+    const qtyToRemove =
+      soleDrink === drinkName && removeNames.length === 1 ? Math.max(totalQty, 1) : 1;
+    result = removeDrinkQtyFromCart(result, drinkName, qtyToRemove);
+  }
+
+  return finalizeCart(mergeCartItems(result, newItems));
+}
+
+function tryApplyChange(
+  userText: string,
+  session: ChatSession,
+  menu: Menu
+): { text: string; session: ChatSession } | null {
+  if (!isChangeRequest(userText) || session.items.length === 0) return null;
+
+  const updated = applyChangeRequest(session.items, userText, menu);
+  if (!updated) {
+    return {
+      session,
+      text: 'I couldn\'t swap that item. Try "change it to flat white" or "switch signature to flat white".',
+    };
+  }
+
+  return {
+    session: { ...session, items: updated, awaitingConfirm: true },
+    text: applyCartChangeReply(updated, "Updated your order:"),
+  };
+}
+
 function removeFromCart(cart: OrderLineItem[], text: string, menu: Menu): OrderLineItem[] {
   const lower = text.toLowerCase();
   const removeAll = /\ball\b|\bboth\b|\bevery\b/i.test(lower);
@@ -514,6 +687,9 @@ function processWithRules(
     };
   }
 
+  const changeResult = tryApplyChange(userText, next, menu);
+  if (changeResult) return changeResult;
+
   const parsed = parseItemsFromText(userText, menu, next.items);
   if (parsed.length > 0) {
     next.items = next.items.length > 0 ? mergeCartItems(next.items, parsed) : parsed;
@@ -608,6 +784,15 @@ export async function processUserMessage(
       type: "reply",
       session: { ...next, items: updated, awaitingConfirm: updated.length > 0 },
       text: applyCartChangeReply(updated, "Updated your order:"),
+    };
+  }
+
+  const changeResult = tryApplyChange(userText, next, menu);
+  if (changeResult) {
+    return {
+      type: "reply",
+      session: changeResult.session,
+      text: changeResult.text,
     };
   }
 
