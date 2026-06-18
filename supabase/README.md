@@ -12,7 +12,18 @@ If menu saves fail with a missing `cost` column, also run [`migration_add_cost.s
 
 For **admin login** and **menu availability toggles**, run [`migration_admin_and_availability.sql`](./migration_admin_and_availability.sql).
 
+**Or from the project root** (with `DATABASE_URL` in `.env` — Supabase → Database → Connection string):
+
+```powershell
+npm run setup:admin
+npm run verify:admin
+```
+
+If login fails after migration, `setup:admin` also applies [`migration_fix_admin_login.sql`](./migration_fix_admin_login.sql).
+
 For **customer reviews**, run [`migration_reviews.sql`](./migration_reviews.sql).
+
+For **customer support contacts** (Help button in chat), run [`migration_add_support.sql`](./migration_add_support.sql).
 
 Default admin after migration:
 - Username: `admin`

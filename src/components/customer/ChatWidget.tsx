@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import type { ChatMessage, Menu, Order } from "../../types";
-import { emptySession, processUserMessage } from "../../lib/chat";
+import type { ChatMessage, ChatSession, Menu, Order } from "../../types";
+import { processUserMessage, syncSessionWithMenu, isClearChatRequest } from "../../lib/chat";
 import { buildQuickReplies } from "../../lib/menuIcons";
 import { PLACEHOLDER_EXAMPLES } from "../../lib/orderingGuide";
 import { ChatOrderGuide } from "./ChatOrderGuide";
+import { ChatHelpPanel, ChatRecoveryActions } from "./ChatHelpPanel";
 import { useOrders } from "../../hooks/useOrders";
 import { useCustomerOrderUpdates } from "../../hooks/useCustomerOrderUpdates";
 import { GcashPaymentCard } from "./GcashPaymentCard";
 import { MicIcon, SendIcon } from "./ChatInputIcons";
 import { ReviewPromptCard } from "./ReviewPromptCard";
+import {
+  createDefaultChatState,
+  createGreeting,
+  loadChatState,
+  resetChatState,
+  saveChatState,
+  CLOSED_GREETING,
+} from "../../lib/chatStorage";
 import {
   getPendingChatStatusUpdates,
   requestCustomerNotificationPermission,
@@ -23,11 +32,6 @@ interface ChatWidgetProps {
   queuedMessage?: string | null;
   onQueueConsumed?: () => void;
 }
-
-const OPEN_GREETING =
-  "Hi! What can I get started for you today?\n\nOrder in plain language — I'll summarise everything before you confirm.";
-const CLOSED_GREETING =
-  "We're closed for orders right now. You can still browse the menu — check back soon for pickup.";
 
 function isStalePaymentMessage(text: string, orders: Order[]): boolean {
   if (text.includes("Want phone updates? Subscribe to")) return true;
@@ -49,17 +53,39 @@ export function ChatWidget({
   onQueueConsumed,
 }: ChatWidgetProps) {
   const { orders } = useOrders();
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: "0", role: "bot", text: OPEN_GREETING },
-  ]);
+  const initialChatRef = useRef<{ messages: ChatMessage[]; session: ChatSession } | null>(null);
+  function getInitialChat() {
+    if (!initialChatRef.current) {
+      initialChatRef.current = loadChatState() ?? createDefaultChatState(isStoreOpen);
+    }
+    return initialChatRef.current;
+  }
+  const [messages, setMessages] = useState<ChatMessage[]>(() => getInitialChat().messages);
   const [input, setInput] = useState("");
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
   const [thinking, setThinking] = useState(false);
   const [listening, setListening] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [speechSupported] = useState(
     () => typeof window !== "undefined" && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
   );
-  const [session, setSession] = useState(emptySession());
+  const [session, setSession] = useState(() => getInitialChat().session);
+
+  useEffect(() => {
+    setSession((prev) => {
+      const synced = syncSessionWithMenu(prev.items, menu);
+      if (
+        synced.length === prev.items.length &&
+        synced.every((item, i) => item.price === prev.items[i]?.price)
+      ) {
+        return prev;
+      }
+      return { ...prev, items: synced };
+    });
+  }, [menu]);
+
+  const prevStoreOpenRef = useRef(isStoreOpen);
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -68,12 +94,15 @@ export function ChatWidget({
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
 
-  const pushMessage = useCallback((role: ChatMessage["role"], text: string, orderId?: string) => {
-    setMessages((prev) => [
-      ...prev,
-      { id: `${Date.now()}-${Math.random()}`, role, text, orderId },
-    ]);
-  }, []);
+  const pushMessage = useCallback(
+    (role: ChatMessage["role"], text: string, orderId?: string, showRecovery?: boolean) => {
+      setMessages((prev) => [
+        ...prev,
+        { id: `${Date.now()}-${Math.random()}`, role, text, orderId, showRecovery },
+      ]);
+    },
+    []
+  );
 
   useCustomerOrderUpdates(
     useCallback((order: Order, message: string) => {
@@ -96,20 +125,46 @@ export function ChatWidget({
   }, [orders, pushMessage]);
 
   useEffect(() => {
-    setMessages([
-      {
-        id: "0",
-        role: "bot",
-        text: isStoreOpen ? OPEN_GREETING : CLOSED_GREETING,
-      },
-    ]);
-    setSession(emptySession());
+    saveChatState(messages, session);
+  }, [messages, session]);
+
+  useEffect(() => {
+    if (prevStoreOpenRef.current === isStoreOpen) return;
+    prevStoreOpenRef.current = isStoreOpen;
+
+    const statusText = isStoreOpen
+      ? "We're open for orders again — tell me what you'd like."
+      : CLOSED_GREETING;
+
+    setMessages((prev) => {
+      if (prev.length === 1 && prev[0].id === "0") {
+        return [{ ...prev[0], text: createGreeting(isStoreOpen).text }];
+      }
+      return [...prev, { id: `status-${Date.now()}`, role: "bot", text: statusText }];
+    });
+  }, [isStoreOpen]);
+
+  const clearChat = useCallback(() => {
+    const fresh = resetChatState(isStoreOpen);
+    initialChatRef.current = fresh;
+    setMessages(fresh.messages);
+    setSession(fresh.session);
     setInput("");
+    setShowClearConfirm(false);
+    inputRef.current?.focus();
   }, [isStoreOpen]);
 
   function sendText(text: string) {
     const trimmed = text.trim();
     if (!trimmed || thinking) return;
+
+    if (isClearChatRequest(trimmed)) {
+      pushMessage("user", trimmed);
+      setInput("");
+      clearChat();
+      return;
+    }
+
     pushMessage("user", trimmed);
     setInput("");
     setThinking(true);
@@ -121,7 +176,12 @@ export function ChatWidget({
     void processUserMessage(trimmed, sessionRef.current, menu, isStoreOpen, history)
       .then((result) => {
         setSession(result.session);
-        pushMessage("bot", result.text);
+        pushMessage(
+          "bot",
+          result.text,
+          undefined,
+          result.type === "reply" ? result.suggestRecovery : undefined
+        );
         if (result.type === "order") {
           trackCustomerOrder(result.order.id);
           void requestCustomerNotificationPermission();
@@ -216,15 +276,61 @@ export function ChatWidget({
               {isStoreOpen ? "Ready to take your order" : "Closed for orders"}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="text-2xl opacity-70"
-            aria-label="Close chat"
-          >
-            ×
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setShowHelp((open) => !open)}
+              className={`rounded-lg px-2 py-1 text-xs transition hover:bg-white/10 ${
+                showHelp ? "bg-white/15 opacity-100" : "opacity-70 hover:opacity-100"
+              }`}
+              aria-label="Get help"
+            >
+              Help
+            </button>
+            {hasUserMessages && (
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(true)}
+                className="rounded-lg px-2 py-1 text-xs opacity-70 transition hover:bg-white/10 hover:opacity-100"
+                aria-label="Clear chat"
+              >
+                Clear
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="text-2xl opacity-70"
+              aria-label="Close chat"
+            >
+              ×
+            </button>
+          </div>
         </div>
+
+        {showHelp && <ChatHelpPanel onClose={() => setShowHelp(false)} />}
+
+        {showClearConfirm && (
+          <div className="flex items-center justify-between gap-3 border-b border-espresso/8 bg-[#faf7f2] px-4 py-3 text-sm">
+            <p className="text-espresso">Clear this conversation?</p>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                className="rounded-full px-3 py-1 text-xs text-warm-gray hover:text-espresso"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={clearChat}
+                className="rounded-full bg-terracotta px-3 py-1 text-xs text-white hover:bg-[#a04e2f]"
+              >
+                Clear chat
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="max-h-[340px] overflow-y-auto bg-gradient-to-b from-[#faf7f2] to-white p-4">
           {messages.map((msg) => {
@@ -254,22 +360,29 @@ export function ChatWidget({
               msg.role !== "user" && msg.role !== "status" && msg.role !== "confirm";
 
             return (
-              <p
-                key={msg.id}
-                className={`mb-2 max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                  preserveWhitespace ? "whitespace-pre-wrap" : "whitespace-pre-line"
-                } ${
-                  msg.role === "user"
-                    ? "ml-auto rounded-br-sm bg-terracotta text-white"
-                    : msg.role === "status"
-                      ? "mx-auto rounded-2xl border border-sage/25 bg-[#edf3ea] text-center text-sage"
-                      : msg.role === "confirm"
-                        ? "mx-auto rounded-full bg-espresso text-center text-xs text-white"
-                        : "rounded-bl-sm bg-cream text-espresso"
-                }`}
-              >
-                {msg.text}
-              </p>
+              <div key={msg.id}>
+                <p
+                  className={`mb-2 max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                    preserveWhitespace ? "whitespace-pre-wrap" : "whitespace-pre-line"
+                  } ${
+                    msg.role === "user"
+                      ? "ml-auto rounded-br-sm bg-terracotta text-white"
+                      : msg.role === "status"
+                        ? "mx-auto rounded-2xl border border-sage/25 bg-[#edf3ea] text-center text-sage"
+                        : msg.role === "confirm"
+                          ? "mx-auto rounded-full bg-espresso text-center text-xs text-white"
+                          : "rounded-bl-sm bg-cream text-espresso"
+                  }`}
+                >
+                  {msg.text}
+                </p>
+                {msg.showRecovery && !thinking && (
+                  <ChatRecoveryActions
+                    hasCartItems={session.items.length > 0}
+                    onSelect={sendText}
+                  />
+                )}
+              </div>
             );
           })}
           {thinking && (

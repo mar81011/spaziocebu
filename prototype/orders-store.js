@@ -247,10 +247,19 @@ function parseItemsFromText(text) {
   const prices = getMenuPricesMap();
   const items = [];
   const allItems = getAllMenuItems().sort((a, b) => b.name.length - a.name.length);
+  const allNames = allItems.map((item) => item.name);
 
   for (const menuItem of allItems) {
     const key = menuItem.name.toLowerCase();
-    if (!lower.includes(key)) continue;
+    const words = key.split(/\s+/).filter((w) => w.length >= 3);
+    const firstWord = words[0];
+    const matchesFull = lower.includes(key);
+    const matchesAllWords = words.length >= 2 && words.every((w) => new RegExp(`\\b${w}s?\\b`, "i").test(lower));
+    const matchesUniqueLead =
+      firstWord &&
+      new RegExp(`\\b${firstWord}s?\\b`, "i").test(lower) &&
+      allNames.filter((name) => name.toLowerCase().split(/\s+/)[0] === firstWord).length === 1;
+    if (!matchesFull && !matchesAllWords && !matchesUniqueLead) continue;
 
     const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const qtyMatch = lower.match(new RegExp(`(\\d+)\\s*(?:x\\s*)?${escaped.split(" ")[0]}`, "i"));

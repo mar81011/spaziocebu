@@ -30,3 +30,18 @@ export const EXAMPLE_QUICK_REPLIES: QuickReply[] = [
     secondaryIcon: "🍯",
   },
 ];
+
+/** Shown after the bot fails to understand — keeps customers in the ordering flow */
+export function buildRecoveryReplies(hasCartItems: boolean): QuickReply[] {
+  const replies: QuickReply[] = [
+    { label: "Show menu", message: "What's on the menu?", icon: "📋" },
+    { label: "My order", message: "Show my order", icon: "🛒" },
+  ];
+  if (hasCartItems) {
+    replies.push(
+      { label: "Confirm", message: "confirm", icon: "✓" },
+      { label: "Start over", message: "clear order", icon: "↩️" }
+    );
+  }
+  return replies;
+}

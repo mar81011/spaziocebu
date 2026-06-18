@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "setup:admin": "node scripts/setup-admin-auth.mjs",
+    "setup:support": "node scripts/setup-support.mjs",
+    "verify:admin": "node scripts/verify-admin-auth.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
@@ -20,8 +25,11 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "dotenv": "^17.4.2",
+    "pg": "^8.21.0",
     "tailwindcss": "^4.1.11",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.1.9"
   }
 }

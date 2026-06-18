@@ -3,6 +3,7 @@ import { changeAdminPassword, getAdminUsername } from "../../lib/adminAuth";
 import { isDatabaseEnabled } from "../../lib/storage";
 import { StoreToggle } from "./StoreToggle";
 import { PaymentSettingsPanel } from "./PaymentSettingsPanel";
+import { SupportSettingsPanel } from "./SupportSettingsPanel";
 import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
 
 export function SettingsPanel() {
@@ -62,9 +63,22 @@ export function SettingsPanel() {
 
         <section className="rounded-[14px] border border-white/90 bg-white p-6 shadow-sm">
           <h2 className="font-serif text-xl font-medium">GCash payments</h2>
-          <p className="mt-1 text-sm text-warm-gray">Shown to customers after they place an order.</p>
+          <p className="mt-1 text-sm text-warm-gray">
+            QR scan or manual send — shown to customers after they place an order.
+          </p>
           <div className="mt-4">
             <PaymentSettingsPanel variant="page" />
+          </div>
+        </section>
+
+        <section className="rounded-[14px] border border-white/90 bg-white p-6 shadow-sm">
+          <h2 className="font-serif text-xl font-medium">Chat help links</h2>
+          <p className="mt-1 text-sm text-warm-gray">
+            Set the page and phone number shown when customers tap <strong>Help</strong> in chat.
+            Changes apply immediately — no redeploy needed.
+          </p>
+          <div className="mt-4">
+            <SupportSettingsPanel variant="page" />
           </div>
         </section>
 

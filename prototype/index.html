@@ -935,6 +935,17 @@
         return `Here's our menu — ${formatMenuForChat()}. What would you like?`;
       }
 
+      if (
+        /\b(summari[sz]e|summary|recap|repeat)\b/i.test(lower) ||
+        /\b(show|see|check|view|tell|what(?:'s| is))\b.*\b(my\s+)?(order|cart)\b/i.test(lower) ||
+        /\bwhat(?:'s| do i have| did i order)\b/i.test(lower)
+      ) {
+        if (chatSession.items.length === 0) {
+          return "You don't have anything in your order yet — tell me what you'd like and I'll summarise it for you.";
+        }
+        return `Here's your order:\n\n${sessionSummary()}\n\nTotal: ${formatCurrency(sessionTotal())}\n\nReply **confirm** to place your order, or tell me what else to add.`;
+      }
+
       const parsed = parseItemsFromText(userText);
       if (parsed.length > 0) {
         chatSession.items = parsed;
@@ -946,7 +957,7 @@
         return "Reply **confirm** to place your order, or tell me what else to add.";
       }
 
-      return "Tell me what you'd like — e.g. \"flat white and a croissant\" — and I'll summarise your order.";
+      return "Tell me what you'd like in plain language — I'll summarise everything before you confirm.";
     }
 
     function sendMessage() {

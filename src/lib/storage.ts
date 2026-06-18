@@ -1,4 +1,6 @@
-import type { Menu, MenuItem, Order, OrderLineItem, OrderReview, PaymentSettings, NotificationSettings } from "../types";
+import type { Menu, MenuItem, Order, OrderLineItem, OrderReview, PaymentSettings, NotificationSettings, SupportSettings } from "../types";
+import { withDefaultGcashQr } from "./payment";
+import { defaultSupportSettings, mergeSupportSettings } from "./support";
 import { notifyOwnerOnNewOrder } from "./notify";
 import { notifyCustomerOnStatusChange } from "./customerNotify";
 import { isSupabaseConfigured } from "./supabase";
@@ -9,6 +11,7 @@ const MENU_KEY = "spazio_menu";
 const STORE_OPEN_KEY = "spazio_store_open";
 const PAYMENT_KEY = "spazio_payment";
 const NOTIFICATION_KEY = "spazio_notifications";
+const SUPPORT_KEY = "spazio_support";
 const REVIEWS_KEY = "spazio_reviews";
 
 export const MENU_UPDATED = "spazio-menu-update";
@@ -17,12 +20,14 @@ export const REVIEWS_UPDATED = "spazio-reviews-update";
 export const STORE_STATUS_UPDATED = "spazio-store-status-update";
 export const PAYMENT_SETTINGS_UPDATED = "spazio-payment-settings-update";
 export const NOTIFICATION_SETTINGS_UPDATED = "spazio-notification-settings-update";
+export const SUPPORT_SETTINGS_UPDATED = "spazio-support-settings-update";
 
 let ordersCache: Order[] | null = null;
 let menuCache: Menu | null = null;
 let storeOpenCache: boolean | null = null;
 let paymentCache: PaymentSettings | null = null;
 let notificationCache: NotificationSettings | null = null;
+let supportCache: SupportSettings | null = null;
 let reviewsCache: OrderReview[] | null = null;
 let bootstrapDone = false;
 
@@ -102,6 +107,10 @@ function emitNotificationSettingsUpdate() {
   window.dispatchEvent(new Event(NOTIFICATION_SETTINGS_UPDATED));
 }
 
+function emitSupportSettingsUpdate() {
+  window.dispatchEvent(new Event(SUPPORT_SETTINGS_UPDATED));
+}
+
 export function isDatabaseEnabled() {
   return isSupabaseConfigured;
 }
@@ -115,8 +124,10 @@ export async function bootstrapStorage(): Promise<void> {
     initMenu();
     initPaymentSettings();
     initNotificationSettings();
+    initSupportSettings();
     initReviews();
     seedSampleOrders();
+    emitSupportSettingsUpdate();
     bootstrapDone = true;
     return;
   }
@@ -126,6 +137,8 @@ export async function bootstrapStorage(): Promise<void> {
     storeOpenCache = config.is_open;
     paymentCache = db.paymentFromConfig(config);
     notificationCache = db.notificationFromConfig(config);
+    supportCache = db.supportFromConfig(config);
+    supportDbSaveDisabled = false;
     ordersCache = await db.fetchOrders();
     reviewsCache = await db.fetchReviews();
     setMenuCache(await db.fetchMenu());
@@ -155,9 +168,11 @@ export async function bootstrapStorage(): Promise<void> {
           storeOpenCache = next.is_open;
           paymentCache = db.paymentFromConfig(next);
           notificationCache = db.notificationFromConfig(next);
+          supportCache = db.supportFromConfig(next);
           emitStoreStatusUpdate();
           emitPaymentSettingsUpdate();
           emitNotificationSettingsUpdate();
+          emitSupportSettingsUpdate();
         });
       },
       onReviews: () => {
@@ -171,6 +186,7 @@ export async function bootstrapStorage(): Promise<void> {
     console.error("Failed to load Supabase data:", error);
   }
 
+  emitSupportSettingsUpdate();
   bootstrapDone = true;
 }
 
@@ -178,7 +194,12 @@ function defaultPaymentSettings(): PaymentSettings {
   return {
     gcashNumber: "09171234567",
     gcashAccountName: "Spazio Coffee",
+    gcashQrUrl: "",
   };
+}
+
+function defaultSupportSettingsLocal(): SupportSettings {
+  return defaultSupportSettings();
 }
 
 function defaultNotificationSettings(): NotificationSettings {
@@ -255,14 +276,14 @@ export function toggleStoreOpen() {
 }
 
 export function getPaymentSettings(): PaymentSettings {
-  if (isSupabaseConfigured) return paymentCache ?? defaultPaymentSettings();
+  if (isSupabaseConfigured) return withDefaultGcashQr(paymentCache ?? defaultPaymentSettings());
   try {
     const data = JSON.parse(localStorage.getItem(PAYMENT_KEY) || "null") as PaymentSettings | null;
-    if (data?.gcashNumber) return data;
+    if (data?.gcashNumber) return withDefaultGcashQr({ ...defaultPaymentSettings(), ...data });
   } catch {
     /* empty */
   }
-  return defaultPaymentSettings();
+  return withDefaultGcashQr(defaultPaymentSettings());
 }
 
 export function savePaymentSettings(settings: PaymentSettings) {
@@ -317,6 +338,70 @@ export function saveNotificationSettings(settings: NotificationSettings) {
 export function initNotificationSettings() {
   if (!localStorage.getItem(NOTIFICATION_KEY)) {
     saveNotificationSettings(defaultNotificationSettings());
+  }
+}
+
+let supportDbSaveDisabled = false;
+
+function readSupportSettingsFromLocal(): SupportSettings | null {
+  try {
+    const data = JSON.parse(localStorage.getItem(SUPPORT_KEY) || "null") as
+      | (Partial<SupportSettings> & { messengerUrl?: string })
+      | null;
+    if (!data) return null;
+    return mergeSupportSettings(data);
+  } catch {
+    return null;
+  }
+}
+
+export function getSupportSettings(): SupportSettings {
+  const local = readSupportSettingsFromLocal();
+  if (isSupabaseConfigured) {
+    const fromDb = mergeSupportSettings(supportCache);
+    if (!local) return fromDb;
+    return mergeSupportSettings({
+      ...fromDb,
+      supportPageUrl: fromDb.supportPageUrl || local.supportPageUrl,
+      supportPageLabel: fromDb.supportPageLabel || local.supportPageLabel,
+      supportPhone: fromDb.supportPhone || local.supportPhone,
+      supportPhoneLabel: fromDb.supportPhoneLabel || local.supportPhoneLabel,
+    });
+  }
+  return local ?? defaultSupportSettingsLocal();
+}
+
+export function saveSupportSettings(settings: SupportSettings) {
+  const normalized = mergeSupportSettings(settings);
+  try {
+    localStorage.setItem(SUPPORT_KEY, JSON.stringify(normalized));
+  } catch {
+    /* storage quota */
+  }
+
+  if (isSupabaseConfigured) {
+    supportCache = normalized;
+    emitSupportSettingsUpdate();
+    if (!supportDbSaveDisabled) {
+      void db.updateSupportSettings(normalized).catch((error) => {
+        const detail = db.formatDbError(error);
+        if (detail.includes("messenger_url") || detail.includes("PGRST204")) {
+          supportDbSaveDisabled = true;
+        }
+        console.error("Support settings DB save failed:", detail);
+        window.dispatchEvent(
+          new CustomEvent("spazio-support-save-error", { detail })
+        );
+      });
+    }
+    return;
+  }
+  emitSupportSettingsUpdate();
+}
+
+export function initSupportSettings() {
+  if (!localStorage.getItem(SUPPORT_KEY)) {
+    saveSupportSettings(defaultSupportSettingsLocal());
   }
 }
 

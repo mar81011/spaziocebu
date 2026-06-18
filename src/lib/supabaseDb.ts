@@ -6,7 +6,10 @@ import type {
   OrderLineItem,
   OrderReview,
   PaymentSettings,
+  SupportSettings,
 } from "../types";
+import { withDefaultGcashQr } from "./payment";
+import { mergeSupportSettings } from "./support";
 import { supabase } from "./supabase";
 
 type StoreConfigRow = {
@@ -14,6 +17,7 @@ type StoreConfigRow = {
   is_open: boolean;
   gcash_number: string;
   gcash_account_name: string;
+  gcash_qr_url: string;
   alerts_enabled: boolean;
   owner_phone: string;
   semaphore_api_key: string;
@@ -22,6 +26,10 @@ type StoreConfigRow = {
   email_alerts_enabled: boolean;
   webhook_url: string;
   browser_alerts_enabled: boolean;
+  support_phone: string;
+  messenger_url: string;
+  support_page_label: string;
+  support_phone_label: string;
 };
 
 type OrderRow = {
@@ -72,10 +80,11 @@ function rowToOrder(row: OrderRow): Order {
 }
 
 function configToPayment(row: StoreConfigRow): PaymentSettings {
-  return {
+  return withDefaultGcashQr({
     gcashNumber: row.gcash_number,
     gcashAccountName: row.gcash_account_name,
-  };
+    gcashQrUrl: row.gcash_qr_url ?? "",
+  });
 }
 
 function configToNotification(row: StoreConfigRow): NotificationSettings {
@@ -89,6 +98,15 @@ function configToNotification(row: StoreConfigRow): NotificationSettings {
     webhookUrl: row.webhook_url,
     browserAlertsEnabled: row.browser_alerts_enabled,
   };
+}
+
+function configToSupport(row: StoreConfigRow): SupportSettings {
+  return mergeSupportSettings({
+    supportPhone: row.support_phone ?? "",
+    supportPageUrl: row.messenger_url ?? "",
+    supportPageLabel: row.support_page_label ?? "",
+    supportPhoneLabel: row.support_phone_label ?? "",
+  });
 }
 
 export async function fetchStoreConfig(): Promise<StoreConfigRow> {
@@ -262,6 +280,7 @@ export async function updatePaymentSettings(settings: PaymentSettings): Promise<
     .update({
       gcash_number: settings.gcashNumber,
       gcash_account_name: settings.gcashAccountName,
+      gcash_qr_url: settings.gcashQrUrl ?? "",
       updated_at: new Date().toISOString(),
     })
     .eq("id", 1);
@@ -285,6 +304,41 @@ export async function updateNotificationSettings(settings: NotificationSettings)
     })
     .eq("id", 1);
   if (error) throw error;
+}
+
+export async function updateSupportSettings(settings: SupportSettings): Promise<void> {
+  const client = assertClient();
+  const payload = {
+    support_phone: settings.supportPhone,
+    messenger_url: settings.supportPageUrl,
+    support_page_label: settings.supportPageLabel,
+    support_phone_label: settings.supportPhoneLabel,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await client.from("store_config").update(payload).eq("id", 1);
+  if (!error) return;
+
+  const missingColumn =
+    error.message.includes("support_page_label") ||
+    error.message.includes("support_phone_label") ||
+    error.message.includes("messenger_url") ||
+    error.message.includes("support_phone") ||
+    error.code === "PGRST204";
+
+  if (missingColumn) {
+    const { error: retryError } = await client
+      .from("store_config")
+      .update({
+        support_phone: settings.supportPhone,
+        messenger_url: settings.supportPageUrl,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", 1);
+    if (!retryError) return;
+    throw retryError;
+  }
+
+  throw error;
 }
 
 export async function upsertCategory(id: string, title: string, sortOrder: number): Promise<void> {
@@ -371,6 +425,10 @@ export function notificationFromConfig(row: StoreConfigRow): NotificationSetting
   return configToNotification(row);
 }
 
+export function supportFromConfig(row: StoreConfigRow): SupportSettings {
+  return configToSupport(row);
+}
+
 export function subscribeToDbChanges(handlers: {
   onOrders?: () => void;
   onMenu?: () => void;
@@ -402,14 +460,35 @@ export function subscribeToDbChanges(handlers: {
   };
 }
 
-export async function hasAdminUsers(): Promise<boolean> {
+export type AdminUsersCheck = {
+  available: boolean;
+  rpcMissing: boolean;
+  invalidKey: boolean;
+  error?: string;
+};
+
+export async function checkAdminUsers(): Promise<AdminUsersCheck> {
   const client = assertClient();
   const { data, error } = await client.rpc("has_admin_users");
   if (error) {
+    const invalidKey =
+      error.message.includes("Invalid API key") ||
+      error.code === "401" ||
+      (typeof error === "object" && "status" in error && error.status === 401);
+    const rpcMissing =
+      !invalidKey &&
+      (error.message.includes("Could not find the function") ||
+        error.message.includes("function public.has_admin_users") ||
+        error.code === "PGRST202");
     console.warn("has_admin_users RPC unavailable:", error.message);
-    return false;
+    return { available: false, rpcMissing, invalidKey, error: error.message };
   }
-  return Boolean(data);
+  return { available: Boolean(data), rpcMissing: false, invalidKey: false };
+}
+
+export async function hasAdminUsers(): Promise<boolean> {
+  const check = await checkAdminUsers();
+  return check.available;
 }
 
 export async function verifyAdminLogin(username: string, password: string): Promise<boolean> {

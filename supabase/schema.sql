@@ -11,6 +11,7 @@ create table if not exists public.store_config (
   is_open boolean not null default true,
   gcash_number text not null default '09171234567',
   gcash_account_name text not null default 'Spazio Coffee',
+  gcash_qr_url text not null default '',
   alerts_enabled boolean not null default true,
   owner_phone text not null default '',
   semaphore_api_key text not null default '',
@@ -19,6 +20,10 @@ create table if not exists public.store_config (
   email_alerts_enabled boolean not null default false,
   webhook_url text not null default '',
   browser_alerts_enabled boolean not null default true,
+  support_phone text not null default '09171234567',
+  messenger_url text not null default '',
+  support_page_label text not null default 'Visit this page',
+  support_phone_label text not null default '',
   updated_at timestamptz not null default now()
 );
 

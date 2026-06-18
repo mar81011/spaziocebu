@@ -3,6 +3,8 @@ export type OrderStatus = "awaiting_payment" | "preparing" | "ready" | "complete
 export interface PaymentSettings {
   gcashNumber: string;
   gcashAccountName: string;
+  /** Data URL or hosted image URL for GCash "Receive via QR" */
+  gcashQrUrl?: string;
 }
 
 export interface NotificationSettings {
@@ -18,6 +20,17 @@ export interface NotificationSettings {
   /** Zapier/Make webhook for custom automations */
   webhookUrl: string;
   browserAlertsEnabled: boolean;
+}
+
+export interface SupportSettings {
+  /** Phone number customers can call or text */
+  supportPhone: string;
+  /** Optional custom label — defaults to "Call or text {number}" */
+  supportPhoneLabel: string;
+  /** Page customers visit (Messenger, Facebook, Instagram, etc.) */
+  supportPageUrl: string;
+  /** Label on the page link button — e.g. "Visit this page" */
+  supportPageLabel: string;
 }
 
 export interface OrderLineItem {
@@ -65,6 +78,8 @@ export interface ChatMessage {
   role: "bot" | "user" | "confirm" | "payment" | "status" | "review";
   text: string;
   orderId?: string;
+  /** Show quick recovery actions under this bot message */
+  showRecovery?: boolean;
 }
 
 export interface ChatSession {

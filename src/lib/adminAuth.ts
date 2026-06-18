@@ -4,6 +4,14 @@ import * as db from "./supabaseDb";
 const AUTH_KEY = "spazio_admin_auth";
 const ADMIN_USER_KEY = "spazio_admin_user";
 
+export type AdminSetupStatus =
+  | { ok: true; mode: "database" | "env" }
+  | {
+      ok: false;
+      reason: "run_migration" | "invalid_supabase_key" | "set_env_password" | "configure_supabase";
+      detail?: string;
+    };
+
 export function getAdminPassword(): string {
   return import.meta.env.VITE_ADMIN_PASSWORD ?? "";
 }
@@ -20,12 +28,42 @@ export function isAdminAuthenticated(): boolean {
   return sessionStorage.getItem(AUTH_KEY) === "1";
 }
 
-export async function isAdminAuthConfigured(): Promise<boolean> {
+export async function getAdminSetupStatus(): Promise<AdminSetupStatus> {
   if (isSupabaseConfigured) {
-    const hasDbAdmin = await db.hasAdminUsers();
-    if (hasDbAdmin) return true;
+    const check = await db.checkAdminUsers();
+    if (check.available) return { ok: true, mode: "database" };
+    if (check.invalidKey) {
+      return {
+        ok: false,
+        reason: "invalid_supabase_key",
+        detail: check.error,
+      };
+    }
+    if (isAdminPasswordConfigured()) return { ok: true, mode: "env" };
+    return {
+      ok: false,
+      reason: "run_migration",
+      detail: check.error,
+    };
   }
-  return isAdminPasswordConfigured();
+
+  const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  if (rawKey && rawKey.trim()) {
+    return {
+      ok: false,
+      reason: "invalid_supabase_key",
+      detail: "Replace the placeholder VITE_SUPABASE_ANON_KEY in .env with your real anon key.",
+    };
+  }
+
+  if (isAdminPasswordConfigured()) return { ok: true, mode: "env" };
+
+  return { ok: false, reason: "configure_supabase" };
+}
+
+export async function isAdminAuthConfigured(): Promise<boolean> {
+  const status = await getAdminSetupStatus();
+  return status.ok;
 }
 
 export async function usesDatabaseAdminAuth(): Promise<boolean> {
